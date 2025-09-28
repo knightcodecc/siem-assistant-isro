@@ -1,12 +1,50 @@
-﻿# Enhanced ISRO SIEM Assistant - Dependencies
+# Enhanced ISRO SIEM Assistant - Production Dependencies
+# Core Framework
 Flask==3.0.0
 Flask-CORS==4.0.0
+Flask-SocketIO==5.3.6
+gunicorn==21.2.0
+
+# SIEM Integration
 elasticsearch==8.11.0
+requests==2.31.0
+urllib3==2.0.7
+
+# Advanced NLP Processing
 transformers==4.36.0
 torch==2.1.0
-pandas==2.1.4
+spacy==3.7.2
+scikit-learn==1.3.2
 numpy==1.24.3
+pandas==2.1.4
+
+# Data Processing & Validation
+marshmallow==3.20.1
 python-dateutil==2.8.2
-redis==5.0.1
 python-dotenv==1.0.0
-gunicorn==21.2.0
+
+# Performance & Caching
+redis==5.0.1
+python-lru-cache==0.1.0
+
+# Security & Authentication
+cryptography==41.0.7
+PyJWT==2.8.0
+
+# Monitoring & Logging
+structlog==23.2.0
+prometheus_client==0.19.0
+
+# Development Dependencies (optional)
+pytest==7.4.3
+pytest-cov==4.1.0
+black==23.11.0
+flake8==6.1.0
+
+# WebSocket Support
+python-socketio==5.10.0
+eventlet==0.33.3
+
+# Data Visualization Support
+plotly==5.17.0
+matplotlib==3.8.2
