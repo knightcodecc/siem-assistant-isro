@@ -3,10 +3,868 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversational SIEM Assistant - ISRO PS#25173</title>
-    <!-- Copy the enhanced HTML content from the artifact here -->
+    <title>CyberChat AI - ISRO Conversational SIEM Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f1419 0%, #1e2640 50%, #0d1829 100%);
+            color: #ffffff;
+            overflow-x: hidden;
+        }
+
+        /* ISRO Header */
+        .isro-header {
+            background: linear-gradient(90deg, #ff6b35, #f7931e);
+            padding: 15px 0;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(255, 107, 53, 0.3);
+        }
+
+        .isro-header h1 {
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .isro-header .subtitle {
+            font-size: 14px;
+            margin-top: 5px;
+            opacity: 0.9;
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            grid-gap: 20px;
+            height: calc(100vh - 120px);
+        }
+
+        /* Chat Interface */
+        .chat-container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .chat-header {
+            background: rgba(255, 107, 53, 0.2);
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .chat-header h2 {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .chat-header .status {
+            font-size: 14px;
+            color: #4ade80;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Chat Messages */
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .message {
+            max-width: 85%;
+            padding: 15px 20px;
+            border-radius: 18px;
+            animation: messageSlide 0.3s ease-out;
+        }
+
+        @keyframes messageSlide {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            color: white;
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .message-content {
+            margin-bottom: 8px;
+        }
+
+        .message-meta {
+            font-size: 12px;
+            opacity: 0.7;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .kql-display {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 107, 53, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .kql-display .label {
+            color: #ff6b35;
+            font-size: 11px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Input Area */
+        .chat-input {
+            padding: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .input-group {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-field {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 25px;
+            padding: 15px 20px;
+            color: white;
+            font-size: 14px;
+            resize: none;
+            min-height: 50px;
+            max-height: 120px;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .input-field:focus {
+            border-color: #ff6b35;
+            box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2);
+        }
+
+        .input-field::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .send-button {
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(255, 107, 53, 0.3);
+        }
+
+        .send-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 107, 53, 0.4);
+        }
+
+        .send-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .sidebar-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 20px;
+        }
+
+        .sidebar-panel h3 {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #ff6b35;
+        }
+
+        /* Performance Metrics */
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .metric-value {
+            color: #4ade80;
+            font-weight: bold;
+        }
+
+        .metric-value.warning {
+            color: #fbbf24;
+        }
+
+        .metric-value.critical {
+            color: #ef4444;
+        }
+
+        /* Mission Status */
+        .mission-item {
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+
+        .mission-name {
+            font-weight: bold;
+            color: #ff6b35;
+            margin-bottom: 4px;
+        }
+
+        .mission-status {
+            font-size: 11px;
+            opacity: 0.8;
+        }
+
+        /* Quick Actions */
+        .quick-action {
+            background: rgba(255, 107, 53, 0.1);
+            border: 1px solid rgba(255, 107, 53, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 13px;
+            text-align: center;
+        }
+
+        .quick-action:hover {
+            background: rgba(255, 107, 53, 0.2);
+            border-color: rgba(255, 107, 53, 0.5);
+        }
+
+        /* Processing Animation */
+        .processing {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 15px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 18px;
+            margin: 10px 0;
+        }
+
+        .processing-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff6b35;
+            animation: dotPulse 1.5s infinite;
+        }
+
+        .dot:nth-child(2) { animation-delay: 0.2s; }
+        .dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes dotPulse {
+            0%, 60%, 100% { opacity: 0.3; transform: scale(1); }
+            30% { opacity: 1; transform: scale(1.2); }
+        }
+
+        /* Results Display */
+        .results-summary {
+            background: rgba(76, 175, 80, 0.1);
+            border-left: 4px solid #4caf50;
+            padding: 12px;
+            border-radius: 0 8px 8px 0;
+            margin: 10px 0;
+        }
+
+        .results-count {
+            font-weight: bold;
+            color: #4caf50;
+        }
+
+        /* Suggestions */
+        .suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .suggestion {
+            background: rgba(255, 107, 53, 0.2);
+            border: 1px solid rgba(255, 107, 53, 0.4);
+            border-radius: 20px;
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .suggestion:hover {
+            background: rgba(255, 107, 53, 0.3);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr auto;
+            }
+            
+            .sidebar {
+                flex-direction: row;
+                overflow-x: auto;
+            }
+            
+            .sidebar-panel {
+                min-width: 250px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .sidebar {
+                flex-direction: column;
+            }
+            
+            .sidebar-panel {
+                min-width: unset;
+            }
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 107, 53, 0.5);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 107, 53, 0.7);
+        }
+    </style>
 </head>
 <body>
-    <!-- Enhanced HTML body content -->
+    <!-- ISRO Header -->
+    <div class="isro-header">
+        <h1>🚀 CyberChat AI - ISRO Conversational SIEM Assistant</h1>
+        <div class="subtitle">Smart India Hackathon 2025 | Problem Statement #25173 | Securing India's Space Mission Infrastructure</div>
+    </div>
+
+    <div class="container">
+        <!-- Main Chat Interface -->
+        <div class="chat-container">
+            <div class="chat-header">
+                <h2>🛡️ Mission Security Operations Center</h2>
+                <div class="status">
+                    <span class="status-dot"></span>
+                    <span>AI Assistant Online • SIEM Connected • All Systems Operational</span>
+                </div>
+            </div>
+
+            <div class="chat-messages" id="chatMessages">
+                <!-- Welcome Message -->
+                <div class="message assistant">
+                    <div class="message-content">
+                        <strong>🌟 Welcome to CyberChat AI - ISRO's Advanced Conversational SIEM Assistant!</strong>
+                        <br><br>
+                        I'm your AI-powered security analyst, specialized in protecting India's space mission infrastructure. I can help you:
+                        <br><br>
+                        🔍 <strong>Investigate Security Events:</strong> "Show failed login attempts from yesterday"<br>
+                        🚀 <strong>Monitor Mission-Critical Systems:</strong> "Check satellite communication anomalies during Chandrayaan mission"<br>
+                        📊 <strong>Generate Comprehensive Reports:</strong> "Create security summary for Aditya-L1 operations"<br>
+                        🎯 <strong>Analyze Threat Patterns:</strong> "Find suspicious network activity at ground stations"
+                        <br><br>
+                        <strong>Try asking me something about ISRO's cybersecurity!</strong>
+                    </div>
+                    <div class="message-meta">
+                        <span>CyberChat AI • Security Domain Expert</span>
+                        <span>Ready for Mission</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input">
+                <div class="input-group">
+                    <textarea 
+                        id="messageInput" 
+                        class="input-field" 
+                        placeholder="Ask about ISRO cybersecurity... (e.g., 'Show failed logins from yesterday' or 'Check Chandrayaan communication security')"
+                        rows="1"></textarea>
+                    <button id="sendButton" class="send-button">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <!-- Performance Metrics -->
+            <div class="sidebar-panel">
+                <h3>🎯 System Performance</h3>
+                <div class="metric">
+                    <span>Query Response Time:</span>
+                    <span class="metric-value" id="responseTime">1.2s</span>
+                </div>
+                <div class="metric">
+                    <span>Translation Accuracy:</span>
+                    <span class="metric-value" id="accuracy">94%</span>
+                </div>
+                <div class="metric">
+                    <span>Context Retention:</span>
+                    <span class="metric-value" id="contextRetention">98%</span>
+                </div>
+                <div class="metric">
+                    <span>Active Sessions:</span>
+                    <span class="metric-value" id="activeSessions">12</span>
+                </div>
+                <div class="metric">
+                    <span>SIEM Status:</span>
+                    <span class="metric-value" id="siemStatus">Online</span>
+                </div>
+            </div>
+
+            <!-- Mission Status -->
+            <div class="sidebar-panel">
+                <h3>🚀 Active Missions</h3>
+                <div class="mission-item">
+                    <div class="mission-name">Chandrayaan-3</div>
+                    <div class="mission-status">🟢 Secure • Surface Operations • 247 events monitored</div>
+                </div>
+                <div class="mission-item">
+                    <div class="mission-name">Aditya-L1</div>
+                    <div class="mission-status">🟡 Monitoring • L1 Transit • 156 events monitored</div>
+                </div>
+                <div class="mission-item">
+                    <div class="mission-name">Gaganyaan</div>
+                    <div class="mission-status">🟢 Secure • Pre-flight Testing • 89 events monitored</div>
+                </div>
+                <div class="mission-item">
+                    <div class="mission-name">NavIC</div>
+                    <div class="mission-status">🟢 Operational • Navigation Services • 334 events monitored</div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="sidebar-panel">
+                <h3>⚡ Quick Security Queries</h3>
+                <div class="quick-action" data-query="Show failed login attempts from yesterday">
+                    🔐 Failed Login Analysis
+                </div>
+                <div class="quick-action" data-query="Check satellite communication anomalies during Chandrayaan mission">
+                    📡 Satellite Comm Security
+                </div>
+                <div class="quick-action" data-query="Generate security report for ground station authentication">
+                    🏢 Ground Station Security
+                </div>
+                <div class="quick-action" data-query="Find suspicious network activity at mission control">
+                    🌐 Network Threat Analysis
+                </div>
+                <div class="quick-action" data-query="Show malware detections in the last week">
+                    🦠 Malware Investigation
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Enhanced Demo Application
+        class ISROSIEMDemo {
+            constructor() {
+                this.initializeElements();
+                this.setupEventListeners();
+                this.initializePerformanceMetrics();
+                this.conversationContext = [];
+                this.processingQuery = false;
+                
+                // Demo responses database
+                this.responses = {
+                    'failed login': {
+                        summary: 'Found 127 failed authentication attempts in the last 24 hours',
+                        kql: 'event.outcome:failure AND event.category:authentication AND @timestamp:[now-24h TO now]',
+                        data: [
+                            { timestamp: '2025-01-15T14:23:45Z', user: 'mission_controller_lead', source_ip: '203.192.45.123', attempts: 15, facility: 'VSSC' },
+                            { timestamp: '2025-01-15T15:45:22Z', user: 'satellite_operator', source_ip: '10.0.15.89', attempts: 8, facility: 'SHAR' }
+                        ],
+                        insights: ['🚨 Multiple failed attempts from external IP addresses', '🌍 Geolocation shows attempts from unusual regions', '⚠️ Brute force pattern detected on privileged accounts'],
+                        suggestions: ['Filter by VPN attempts', 'Show geographic distribution', 'Generate timeline view', 'Check user behavior patterns']
+                    },
+                    'satellite communication': {
+                        summary: 'Monitoring 23 satellite communication events with 2 anomalies detected during Chandrayaan mission phases',
+                        kql: 'mission.name:chandrayaan* AND service.name:satellite_comm AND @timestamp:[now-7d TO now]',
+                        data: [
+                            { timestamp: '2025-01-15T16:12:33Z', satellite: 'Chandrayaan-3 Orbiter', anomaly: 'signal_interference', duration: '4m 32s', ground_station: 'IDSN_Byalalu' },
+                            { timestamp: '2025-01-14T11:30:15Z', satellite: 'Chandrayaan-3 Lander', anomaly: 'communication_delay', duration: '2m 15s', ground_station: 'ISTRAC_Hassan' }
+                        ],
+                        insights: ['📡 Temporary communication disruptions during critical mission phases', '🛰️ All anomalies resolved within acceptable timeframes', '📊 Pattern suggests external interference sources'],
+                        suggestions: ['Analyze interference sources', 'Generate mission timeline', 'Check ground station logs', 'Compare with weather data']
+                    },
+                    'ground station': {
+                        summary: 'Security analysis of 15 ISRO ground stations shows 89 authentication events with 12 requiring attention',
+                        kql: 'tags:ground_station AND event.category:authentication AND @timestamp:[now-24h TO now]',
+                        data: [
+                            { timestamp: '2025-01-15T13:45:30Z', station: 'VSSC_Thumba', event: 'privileged_access', user: 'mission_director', status: 'success' },
+                            { timestamp: '2025-01-15T14:22:18Z', station: 'SHAR_Sriharikota', event: 'failed_login', user: 'unknown', attempts: 25, status: 'blocked' }
+                        ],
+                        insights: ['🏢 All critical ground stations operational and secure', '🔒 Multi-factor authentication working effectively', '⚡ Real-time monitoring active across all facilities'],
+                        suggestions: ['Show station status map', 'Generate facility security report', 'Check access patterns', 'Monitor critical systems']
+                    },
+                    'mission control': {
+                        summary: 'Mission control security monitoring shows 156 events across all active missions with high security posture',
+                        kql: 'host.name:*mission-control* AND tags:mission_control AND @timestamp:[now-12h TO now]',
+                        data: [
+                            { timestamp: '2025-01-15T16:30:45Z', facility: 'Mission_Control_Bangalore', mission: 'aditya-l1', event: 'system_access', user: 'flight_director', clearance: 'top_secret' },
+                            { timestamp: '2025-01-15T17:15:22Z', facility: 'Launch_Control_SHAR', mission: 'gaganyaan', event: 'security_scan', result: 'clean', automated: true }
+                        ],
+                        insights: ['🎯 All mission control centers operating at maximum security', '🚀 Real-time monitoring during critical mission phases', '🛡️ Zero security incidents in the last 48 hours'],
+                        suggestions: ['Show mission timeline', 'Generate control center status', 'Check communication links', 'Monitor crew safety systems']
+                    },
+                    'malware': {
+                        summary: 'Comprehensive malware scan completed: 0 active threats detected, 245 files scanned, all systems clean',
+                        kql: 'event.category:malware OR threat.indicator.type:malware AND @timestamp:[now-7d TO now]',
+                        data: [
+                            { timestamp: '2025-01-14T09:15:30Z', system: 'Ground_Control_VSSC', scan_result: 'clean', files_scanned: 125420, threats_found: 0 },
+                            { timestamp: '2025-01-13T14:22:45Z', system: 'Mission_Control_ISAC', scan_result: 'clean', files_scanned: 98765, threats_found: 0 }
+                        ],
+                        insights: ['✅ All ISRO systems are malware-free and secure', '🛡️ Advanced threat detection systems operating normally', '🔄 Continuous monitoring active across all critical infrastructure'],
+                        suggestions: ['Schedule deep system scan', 'Review threat intelligence', 'Check endpoint protection', 'Generate compliance report']
+                    },
+                    'security report': {
+                        summary: 'Comprehensive security report generated covering all ISRO facilities and active missions',
+                        kql: '* | stats count() by facility, mission, severity | sort count desc',
+                        data: [
+                            { facility: 'VSSC', total_events: 1247, critical: 2, high: 15, medium: 234, missions: ['Chandrayaan-3', 'General Operations'] },
+                            { facility: 'SHAR', total_events: 856, critical: 1, high: 8, medium: 127, missions: ['Gaganyaan', 'PSLV Operations'] }
+                        ],
+                        insights: ['📊 Overall security posture: EXCELLENT', '🚀 All space missions operating within security parameters', '⚡ Response time for critical incidents: <5 minutes average'],
+                        suggestions: ['Export detailed report', 'Schedule executive briefing', 'Update security protocols', 'Review incident responses']
+                    }
+                };
+            }
+
+            initializeElements() {
+                this.chatMessages = document.getElementById('chatMessages');
+                this.messageInput = document.getElementById('messageInput');
+                this.sendButton = document.getElementById('sendButton');
+                this.responseTime = document.getElementById('responseTime');
+                this.accuracy = document.getElementById('accuracy');
+                this.contextRetention = document.getElementById('contextRetention');
+                this.activeSessions = document.getElementById('activeSessions');
+                this.siemStatus = document.getElementById('siemStatus');
+            }
+
+            setupEventListeners() {
+                this.sendButton.addEventListener('click', () => this.sendMessage());
+                this.messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+
+                // Auto-resize textarea
+                this.messageInput.addEventListener('input', () => {
+                    this.messageInput.style.height = 'auto';
+                    this.messageInput.style.height = this.messageInput.scrollHeight + 'px';
+                });
+
+                // Quick action buttons
+                document.querySelectorAll('.quick-action').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const query = button.getAttribute('data-query');
+                        this.messageInput.value = query;
+                        this.sendMessage();
+                    });
+                });
+            }
+
+            initializePerformanceMetrics() {
+                // Simulate real-time metrics updates
+                setInterval(() => {
+                    this.responseTime.textContent = (Math.random() * 1.5 + 0.8).toFixed(1) + 's';
+                    this.accuracy.textContent = (Math.random() * 6 + 90).toFixed(0) + '%';
+                    this.contextRetention.textContent = (Math.random() * 3 + 96).toFixed(0) + '%';
+                    this.activeSessions.textContent = Math.floor(Math.random() * 15 + 8);
+                    
+                    const statuses = ['Online', 'Syncing', 'High Load'];
+                    const status = statuses[Math.floor(Math.random() * statuses.length)];
+                    this.siemStatus.textContent = status;
+                    this.siemStatus.className = 'metric-value ' + (status === 'Online' ? '' : status === 'Syncing' ? 'warning' : 'critical');
+                }, 3000);
+            }
+
+            async sendMessage() {
+                const message = this.messageInput.value.trim();
+                if (!message || this.processingQuery) return;
+
+                this.processingQuery = true;
+                this.sendButton.disabled = true;
+                
+                // Add user message
+                this.addMessage('user', message);
+                this.messageInput.value = '';
+                this.messageInput.style.height = 'auto';
+
+                // Show processing
+                const processingElement = this.showProcessing();
+
+                // Simulate processing delay
+                await this.delay(1500 + Math.random() * 1000);
+
+                // Remove processing indicator
+                processingElement.remove();
+
+                // Generate AI response
+                const response = this.generateResponse(message);
+                this.addMessage('assistant', response.content, response.kql, response.metadata);
+
+                // Add suggestions if available
+                if (response.suggestions && response.suggestions.length > 0) {
+                    this.addSuggestions(response.suggestions);
+                }
+
+                this.processingQuery = false;
+                this.sendButton.disabled = false;
+            }
+
+            addMessage(sender, content, kql = null, metadata = null) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${sender}`;
+
+                let messageContent = `<div class="message-content">${content}</div>`;
+
+                if (kql) {
+                    messageContent += `
+                        <div class="kql-display">
+                            <div class="label">Generated Query</div>
+                            <div>${kql}</div>
+                        </div>
+                    `;
+                }
+
+                if (metadata && metadata.results_count) {
+                    messageContent += `
+                        <div class="results-summary">
+                            <span class="results-count">${metadata.results_count} events found</span> • 
+                            Processing time: ${metadata.processing_time} • 
+                            Confidence: ${metadata.confidence}%
+                        </div>
+                    `;
+                }
+
+                const timestamp = new Date().toLocaleTimeString();
+                messageContent += `
+                    <div class="message-meta">
+                        <span>${sender === 'user' ? 'Security Analyst' : 'CyberChat AI'}</span>
+                        <span>${timestamp}</span>
+                    </div>
+                `;
+
+                messageDiv.innerHTML = messageContent;
+                this.chatMessages.appendChild(messageDiv);
+                this.scrollToBottom();
+            }
+
+            addSuggestions(suggestions) {
+                const suggestionsDiv = document.createElement('div');
+                suggestionsDiv.className = 'suggestions';
+
+                suggestions.forEach(suggestion => {
+                    const suggestionButton = document.createElement('div');
+                    suggestionButton.className = 'suggestion';
+                    suggestionButton.textContent = suggestion;
+                    suggestionButton.addEventListener('click', () => {
+                        this.messageInput.value = suggestion;
+                        this.sendMessage();
+                    });
+                    suggestionsDiv.appendChild(suggestionButton);
+                });
+
+                this.chatMessages.appendChild(suggestionsDiv);
+                this.scrollToBottom();
+            }
+
+            showProcessing() {
+                const processingDiv = document.createElement('div');
+                processingDiv.className = 'processing';
+                processingDiv.innerHTML = `
+                    <div class="processing-dots">
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                    </div>
+                    <span>Processing query and analyzing SIEM data...</span>
+                `;
+                this.chatMessages.appendChild(processingDiv);
+                this.scrollToBottom();
+                return processingDiv;
+            }
+
+            generateResponse(query) {
+                const queryLower = query.toLowerCase();
+                let matchedResponse = null;
+                let matchedKey = '';
+
+                // Find best matching response
+                for (const [key, response] of Object.entries(this.responses)) {
+                    if (queryLower.includes(key)) {
+                        matchedResponse = response;
+                        matchedKey = key;
+                        break;
+                    }
+                }
+
+                // Default response if no match found
+                if (!matchedResponse) {
+                    return {
+                        content: `
+                            <strong>Query Analysis Complete</strong><br><br>
+                            I've analyzed your security query: "<em>${query}</em>"<br><br>
+                            While I don't have specific mock data for this exact query, in a production environment, I would:
+                            <br><br>
+                            🔍 <strong>Parse your natural language intent</strong><br>
+                            🔧 <strong>Generate optimized KQL/Elasticsearch DSL</strong><br>
+                            📊 <strong>Query ISRO's SIEM systems</strong><br>
+                            📈 <strong>Format results with visualizations</strong><br>
+                            💡 <strong>Provide actionable insights</strong>
+                            <br><br>
+                            Try one of the example queries from the sidebar for a full demonstration!
+                        `,
+                        kql: `event.category:security AND @timestamp:[now-24h TO now] | sort @timestamp desc`,
+                        metadata: {
+                            results_count: 'N/A',
+                            processing_time: '1.2s',
+                            confidence: '85'
+                        },
+                        suggestions: ['Show failed login attempts from yesterday', 'Check satellite communication security', 'Generate security report']
+                    };
+                }
+
+                // Build comprehensive response
+                const insights = matchedResponse.insights.join('<br>');
+                const dataPreview = this.formatDataPreview(matchedResponse.data);
+
+                return {
+                    content: `
+                        <strong>Security Analysis Results</strong><br><br>
+                        📊 <strong>Summary:</strong> ${matchedResponse.summary}<br><br>
+                        ${dataPreview}
+                        <br>
+                        <strong>🎯 Key Insights:</strong><br>
+                        ${insights}
+                    `,
+                    kql: matchedResponse.kql,
+                    metadata: {
+                        results_count: matchedResponse.data.length,
+                        processing_time: (Math.random() * 1.5 + 0.8).toFixed(1) + 's',
+                        confidence: Math.floor(Math.random() * 10 + 85)
+                    },
+                    suggestions: matchedResponse.suggestions
+                };
+            }
+
+            formatDataPreview(data) {
+                if (!data || data.length === 0) return '';
+
+                let preview = '<strong>📋 Sample Results:</strong><br>';
+                data.slice(0, 2).forEach((item, index) => {
+                    preview += `<br><strong>Event ${index + 1}:</strong><br>`;
+                    Object.entries(item).slice(0, 4).forEach(([key, value]) => {
+                        preview += `• ${key.replace('_', ' ')}: ${value}<br>`;
+                    });
+                });
+
+                return preview;
+            }
+
+            delay(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+            scrollToBottom() {
+                this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+            }
+        }
+
+        // Initialize the demo when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new ISROSIEMDemo();
+        });
+    </script>
 </body>
 </html>
