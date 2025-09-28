@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversational SIEM Assistant - ISRO PS#25173</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #ff6b35 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.98);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .isro-logo {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #ff6b35, #f7931e);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 1.5rem;
+        }
+
+        .logo h1 {
+            font-size: 1.8rem;
+            background: linear-gradient(135deg, #1e3c72 0%, #ff6b35 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: linear-gradient(135deg, #f0f8ff, #e6f3ff);
+            border-radius: 20px;
+            font-size: 0.9rem;
+            border: 1px solid #d1ecf1;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #28a745;
+        }
+
+        .status-indicator.processing {
+            background: #ffc107;
+        }
+
+        .status-indicator.offline {
+            background: #dc3545;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .main-container {
+            flex: 1;
+            display: flex;
+            padding: 2rem;
+            gap: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            backdrop-filter: blur(10px);
+            height: fit-content;
+        }
+
+        .performance-dashboard {
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 12px;
+            color: white;
+        }
+
+        .performance-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .metric-value {
+            font-weight: 600;
+        }
+
+        .sidebar h3 {
+            color: #333;
+            margin-bottom: 1rem;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .mission-selector {
+            margin-bottom: 1.5rem;
+        }
+
+        .mission-dropdown {
+            width: 100%;
+            padding: 0.5rem;
+            border: 2px solid #e5e5e5;
+            border-radius: 8px;
+            background: white;
+            color: #333;
+        }
+
+        .query-templates {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .template-btn {
+            padding: 0.75rem;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: left;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            color: #333;
+        }
+
+        .template-btn:hover {
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            color: white;
+            transform: translateX(5px);
+        }
+
+        .chat-container {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+
+        .chat-header {
+            padding: 1.5rem;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #ff6b35 100%);
+            color: white;
+        }
+
+        .chat-header h2 {
+            font-size: 1.4rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .chat-header p {
+            font-size: 0.95rem;
+            opacity: 0.9;
+        }
+
+        .processing-status {
+            padding: 0.75rem 1.5rem;
+            background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+            border-left: 4px solid #ffc107;
+            display: none;
+        }
+
+        .processing-status.active {
+            display: block;
+        }
+
+        .processing-steps {
+            font-size: 0.85rem;
+            color: #856404;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            background: linear-gradient(to bottom, rgba(248, 249, 250, 0.5), rgba(233, 236, 239, 0.3));
+        }
+
+        .message {
+            display: flex;
+            gap: 1rem;
+            animation: slideIn 0.4s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .message-avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            font-size: 0.9rem;
+        }
+
+        .message.user .message-avatar {
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+        }
+
+        .message.assistant .message-avatar {
+            background: linear-gradient(135deg, #28a745, #20c997);
+        }
+
+        .message-content {
+            max-width: 75%;
+            padding: 1.25rem;
+            border-radius: 15px;
+            position: relative;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            color: white;
+        }
+
+        .message.assistant .message-content {
+            background: #ffffff;
+            color: #333;
+            border: 1px solid #e9ecef;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .query-analysis {
+            margin: 1rem 0;
+            padding: 1rem;
+            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+            border-radius: 10px;
+            border-left: 4px solid #2196f3;
+        }
+
+        .analysis-item {
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .analysis-label {
+            font-weight: 600;
+            color: #1565c0;
+        }
+
+        .kql-query {
+            margin: 1rem 0;
+            padding: 1rem;
+            background: #1a1a1a;
+            color: #4ade80;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            border-left: 4px solid #4ade80;
+        }
+
+        .results-summary {
+            margin: 1rem 0;
+            padding: 1rem;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 10px;
+            border: 1px solid #dee2e6;
+        }
+
+        .results-table {
+            margin-top: 1rem;
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .results-table th, .results-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .results-table th {
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            color: white;
+            font-weight: 600;
+        }
+
+        .results-table tr:hover {
+            background-color: rgba(30, 60, 114, 0.05);
+        }
+
+        .chart-container {
+            margin: 1rem 0;
+            padding: 1rem;
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e9ecef;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .chart-title {
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #333;
+            text-align: center;
+        }
+
+        .chart-bars {
+            display: flex;
+            gap: 0.5rem;
+            align-items: flex-end;
+            height: 180px;
+            margin-top: 1rem;
+            justify-content: center;
+        }
+
+        .chart-bar {
+            flex: 1;
+            max-width: 80px;
+            background: linear-gradient(135deg, #1e3c72, #ff6b35);
+            border-radius: 6px 6px 0 0;
+            position: relative;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .chart-bar:hover {
+            opacity: 0.8;
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(30, 60, 114, 0.3);
+        }
+
+        .chart-label {
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.75rem;
+            white-space: nowrap;
+            color: #666;
+        }
+
+        .chart-value {
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: #1e3c72;
+        }
+
+        .context-indicators {
+            margin-top: 1rem;
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .context-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            background: linear-gradient(135deg, rgba(30, 60, 114, 0.1), rgba(255, 107, 53, 0.1));
+            color: #1e3c72;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            border: 1px solid rgba(30, 60, 114, 0.2);
+        }
+
+        .follow-up-suggestions {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: linear-gradient(135deg, #e8f5e8, #c8e6c9);
+            border-radius: 10px;
+            border-left: 4px solid #4caf50;
+        }
+
+        .suggestion-title {
+            font-weight: 600;
+            color: #2e7d32;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .suggestion-btns {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .suggestion-btn {
+            padding: 0.4rem 0.8rem;
+            background: white;
+            border: 1px solid #4caf50;
+            color: #2e7d32;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .suggestion-btn:hover {
+            background: #4caf50;
+            color: white;
+        }
+
+        .input-container {
+            padding: 1.5rem;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-top: 1px solid #dee2e6;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 1rem;
+            border: 2px solid #dee2e6;
+            border-radius: 25px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .message-input:focus {
+            border-color: #1e3c72;
+            box-shadow: 0 0 0 3px rgba(30, 60, 114, 0.1);
+        }
+
+        .input-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .action-btn {
+            padding: 1rem;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .send-btn {
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            color: white;
+        }
+
+        .voice-btn {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+        }
+
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .typing-indicator {
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem;
+            margin-left: 4rem;
+        }
+
+        .typing-indicator.active {
+            display: flex;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: #666;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+
+        .error-message {
+            background: linear-gradient(135deg, #ffe6e6, #ffcccc);
+            border: 1px solid #ff9999;
+            border-radius: 10px;
+            padding: 1rem;
+            margin: 1rem 0;
+            color: #cc0000;
+        }
+
+        .clarification-request {
+            background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+            border: 1px solid #ffc107;
+            border-radius: 10px;
+            padding: 1rem;
+            margin: 1rem 0;
+            color: #856404;
+        }
+
+        .clarification-options {
+            margin-top: 0.5rem;
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .clarification-btn {
+            padding: 0.5rem 1rem;
+            background: white;
+            border: 1px solid #ffc107;
+            color: #856404;
+            border-radius: 15px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .clarification-btn:hover {
+            background: #ffc107;
+            color: white;
+        }
+
+        @media (max-width: 1024px) {
+            .main-container {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                order: 2;
+            }
+            
+            .chat-container {
+                order: 1;
+            }
+            
+            .message-content {
+                max-width: 90%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            <div class="isro-logo">🚀</div>
+            <div>
+                <h1>SIEM Assistant</h1>
+                <div class="subtitle">Indian Space Research Organisation - PS#25173</div>
+            </div>
+        </div>
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-indicator connected" id="elastic-indicator"></span>
+                <span id="elastic-status">Elastic SIEM Online</span>
+            </div>
+            <div class="status-item">
+                <span class="status-indicator connected" id="wazuh-indicator"></span>
+                <span id="wazuh-status">Wazuh Connected</span>
+            </div>
+            <div class="status-item">
+                <span>Context: <strong id="context-count">0</strong> queries</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="sidebar">
+            <div class="performance-dashboard">
+                <div class="performance-title">🚀 Real-time Performance</div>
+                <div class="metric">
+                    <span>Query Response:</span>
+                    <span class="metric-value" id="response-time">1.2s avg</span>
+                </div>
+                <div class="metric">
+                    <span>Translation Accuracy:</span>
+                    <span class="metric-value" id="accuracy">94%</span>
+                </div>
+                <div class="metric">
+                    <span>Context Retention:</span>
+                    <span class="metric-value" id="context-retention">98%</span>
+                </div>
+                <div class="metric">
+                    <span>Active Sessions:</span>
+                    <span class="metric-value" id="active-sessions">15</span>
+                </div>
+            </div>
+
+            <div class="mission-selector">
+                <h3>🛰️ Mission Context</h3>
+                <select class="mission-dropdown" id="missionSelector">
+                    <option value="general">General Security Operations</option>
+                    <option value="chandrayaan">Chandrayaan-3 Mission</option>
+                    <option value="aditya">Aditya-L1 Solar Mission</option>
+                    <option value="gaganyaan">Gaganyaan Human Spaceflight</option>
+                    <option value="navigation">NavIC Navigation System</option>
+                    <option value="earth">Earth Observation Satellites</option>
+                </select>
+            </div>
+
+            <h3>🔍 ISRO Security Queries</h3>
+            <div class="query-templates">
+                <button class="template-btn" onclick="sendTemplate('Show failed authentication attempts on satellite ground stations yesterday')">
+                    🛡️ Ground Station Security
+                </button>
+                <button class="template-btn" onclick="sendTemplate('Check for unusual network traffic during Chandrayaan mission critical phases')">
+                    🌙 Mission Critical Monitoring
+                </button>
+                <button class="template-btn" onclick="sendTemplate('Analyze malware detection patterns in space operations network')">
+                    🦠 Space Network Threats
+                </button>
+                <button class="template-btn" onclick="sendTemplate('Generate security report for satellite communication anomalies')">
+                    📡 Communication Security
+                </button>
+                <button class="template-btn" onclick="sendTemplate('Show privileged access activities in mission control systems')">
+                    👥 Mission Control Access
+                </button>
+                <button class="template-btn" onclick="sendTemplate('Monitor VPN connections from ISRO centers during launch windows')">
+                    🔐 Launch Security Protocol
+                </button>
+            </div>
+        </div>
+
+        <div class="chat-container">
+            <div class="chat-header">
+                <h2>🛰️ Conversational SIEM Investigation</h2>
+                <p>Advanced NLP-powered security analysis for ISRO space missions and infrastructure</p>
+            </div>
+
+            <div class="processing-status" id="processingStatus">
+                <div class="processing-steps">
+                    🔄 Processing: <span id="currentStep">Analyzing natural language input...</span>
+                </div>
+            </div>
+
+            <div class="messages-container" id="messages">
+                <div class="message assistant">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <p>🚀 <strong>Namaste! Welcome to ISRO's Conversational SIEM Assistant</strong></p>
+                        <p style="margin-top: 1rem;">I'm your AI-powered security analyst, specialized in protecting India's space infrastructure and missions. I can help you investigate security events, analyze logs, and generate comprehensive reports using natural language.</p>
+                        
+                        <div class="query-analysis">
+                            <div class="analysis-item">
+                                <span class="analysis-label">🎯 Specialized Areas:</span> Space mission security, satellite communications, ground station monitoring
+                            </div>
+                            <div class="analysis-item">
+                                <span class="analysis-label">🔍 Query Types:</span> Authentication failures, network anomalies, malware detection, privilege escalation
+                            </div>
+                            <div class="analysis-item">
+                                <span class="analysis-label">📊 Output Formats:</span> Real-time dashboards, executive reports, technical analysis, visualizations
+                            </div>
+                        </div>
+
+                        <div class="follow-up-suggestions">
+                            <div class="suggestion-title">🌟 Quick Start Examples:</div>
+                            <div class="suggestion-btns">
+                                <button class="suggestion-btn" onclick="sendTemplate('Show security status during last Chandrayaan mission phase')">Mission Security</button>
+                                <button class="suggestion-btn" onclick="sendTemplate('Generate monthly threat report for space operations')">Threat Analysis</button>
+                                <button class="suggestion-btn" onclick="sendTemplate('Check ground station access logs for anomalies')">Access Monitoring</button>
+                            </div>
+                        </div>
+                        
+                        <div class="context-indicators">
+                            <span class="context-badge">Multi-turn Conversations ✓</span>
+                            <span class="context-badge">ISRO Mission Context ✓</span>
+                            <span class="context-badge">Real-time Analysis ✓</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="typing-indicator" id="typing">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <span style="margin-left: 0.5rem; color: #666;">SIEM Assistant is analyzing...</span>
+            </div>
+
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <input 
+                        type="text" 
+                        class="message-input" 
+                        id="messageInput" 
+                        placeholder="Ask me about space mission security, satellite communications, ground station monitoring..."
+                        onkeypress="handleKeyPress(event)"
+                    >
+                    <div class="input-actions">
+                        <button class="action-btn voice-btn" onclick="toggleVoice()" title="Voice Input">
+                            🎤
+                        </button>
+                        <button class="action-btn send-btn" onclick="sendMessage()" title="Send Message">
+                            ➤
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Enhanced SIEM data with ISRO-specific context
+        const isroSIEMData = {
+            groundStationSecurity: [
+                { timestamp: '2025-01-15 14:23:45', station: 'VSSC-Thumba', event: 'failed_auth', user: 'ops_team_lead', attempts: 15, source_ip: '203.192.45.123', severity: 'HIGH' },
+                { timestamp: '2025-01-15 15:45:22', station: 'SHAR-Sriharikota', event: 'privilege_escalation', user: 'mission_controller', source_ip: '10.0.15.89', severity: 'CRITICAL' },
+                { timestamp: '2025-01-15 16:12:33', station: 'ISTRAC-Hassan', event: 'suspicious_login', user: 'satellite_operator', location: 'External', severity: 'MEDIUM' },
+                { timestamp: '2025-01-15 17:05:11', station: 'NRSC-Hyderabad', event: 'data_access_anomaly', user: 'data_analyst', data_volume: '2.3GB', severity: 'HIGH' }
+            ],
+            
+            missionCriticalEvents: [
+                { mission: 'Chandrayaan-3', phase: 'Lunar Orbit Insertion', event: 'communication_anomaly', duration: '4m 32s', impact: 'Telemetry loss', status: 'RESOLVED' },
+                { mission: 'Aditya-L1', phase: 'L1 Transit', event: 'network_intrusion_attempt', source: 'External', blocked: true, threat_level: 'HIGH' },
+                { mission: 'PSLV-C58', phase: 'Pre-launch', event: 'unauthorized_access_attempt', system: 'Launch Control', user: 'unknown', status: 'BLOCKED' },
+                { mission: 'NavIC', phase: 'Operations', event: 'signal_jamming_detected', location: 'Border Region', satellites_affected: 3, mitigation: 'ACTIVE' }
+            ],
+            
+            spaceThreatIntelligence: [
+                { threat_type: 'Nation State APT', targets: 'Satellite Communication', techniques: ['Spear Phishing', 'Zero Day'], risk_level: 'CRITICAL', last_seen: '2 days ago' },
+                { threat_type: 'Cybercriminal Group', targets: 'Ground Infrastructure', techniques: ['Ransomware', 'Lateral Movement'], risk_level: 'HIGH', last_seen: '1 week ago' },
+                { threat_type: 'Insider Threat', targets: 'Mission Data', techniques: ['Data Exfiltration', 'Privilege Abuse'], risk_level: 'MEDIUM', last_seen: '3 days ago' },
+                { threat_type: 'Space Debris Tracker', targets: 'Orbital Assets', techniques: ['Collision Prediction', 'Avoidance Maneuvers'], risk_level: 'MEDIUM', status: 'MONITORING' }
+            ],
+
+            communicationSecurity: [
+                { satellite: 'INSAT-3DR', frequency: '4.2 GHz', anomaly: 'Signal interference', location: 'Arabian Sea', duration: '15 minutes', impact: 'Weather data delay' },
+                { satellite: 'RISAT-2B', frequency: '5.6 GHz', anomaly: 'Unauthorized access attempt', source: 'Unknown', blocked: true, investigation: 'ONGOING' },
+                { satellite: 'Cartosat-3', frequency: '8.1 GHz', anomaly: 'Command injection attempt', source: 'Traced to hostile actor', mitigation: 'IMPLEMENTED' },
+                { satellite: 'GSAT-30', frequency: '12.5 GHz', anomaly: 'Encryption key rotation failure', impact: 'Secure comms compromised', status: 'RESOLVED' }
