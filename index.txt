@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversational SIEM Assistant - ISRO PS#25173</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo img {
+            height: 50px;
+        }
+
+        .logo h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: #f5f5f5;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #4ade80;
+        }
+
+        .status-indicator.disconnected {
+            background: #f87171;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .main-container {
+            flex: 1;
+            display: flex;
+            padding: 2rem;
+            gap: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar h3 {
+            color: #333;
+            margin-bottom: 1rem;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .query-templates {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .template-btn {
+            padding: 0.75rem;
+            background: linear-gradient(135deg, #f5f5f5, #e5e5e5);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: left;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .template-btn:hover {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            transform: translateX(5px);
+        }
+
+        .chat-container {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            padding: 1.5rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .chat-header h2 {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .chat-header p {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .message {
+            display: flex;
+            gap: 1rem;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .message-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+        }
+
+        .message.user .message-avatar {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+        }
+
+        .message.assistant .message-avatar {
+            background: linear-gradient(135deg, #10b981, #059669);
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 1rem;
+            border-radius: 15px;
+            position: relative;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .message.assistant .message-content {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .kql-query {
+            margin-top: 0.5rem;
+            padding: 0.75rem;
+            background: #1a1a1a;
+            color: #4ade80;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+        }
+
+        .results-table {
+            margin-top: 1rem;
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        .results-table th, .results-table td {
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+
+        .results-table th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+
+        .chart-container {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: white;
+            border-radius: 8px;
+        }
+
+        .chart-bars {
+            display: flex;
+            gap: 0.5rem;
+            align-items: flex-end;
+            height: 150px;
+            margin-top: 1rem;
+        }
+
+        .chart-bar {
+            flex: 1;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 4px 4px 0 0;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .chart-bar:hover {
+            opacity: 0.8;
+            transform: translateY(-5px);
+        }
+
+        .chart-label {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.75rem;
+            white-space: nowrap;
+        }
+
+        .chart-value {
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .input-container {
+            padding: 1.5rem;
+            background: #f5f5f5;
+            border-top: 1px solid #e5e5e5;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 2px solid #e5e5e5;
+            border-radius: 25px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .message-input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .send-btn {
+            padding: 0.75rem 1.5rem;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .typing-indicator {
+            display: none;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.5rem 1rem;
+        }
+
+        .typing-indicator.active {
+            display: flex;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: #999;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+
+        .context-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            
+            .message-content {
+                max-width: 85%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            <h1>🚀 SIEM Assistant</h1>
+            <span style="font-size: 0.9rem; color: #666;">ISRO PS#25173</span>
+        </div>
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-indicator connected"></span>
+                <span id="siem-status">Elastic SIEM Connected</span>
+            </div>
+            <div class="status-item">
+                <span>Context: <strong id="context-count">0</strong> queries</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="sidebar">
+            <h3>Quick Queries</h3>
+            <div class="query-templates">
+                <button class="template-btn" onclick="sendTemplate('Show me failed login attempts from yesterday')">
+                    🔐 Failed Logins
+                </button>
+                <button class="template-btn" onclick="sendTemplate('What are the top security alerts in the last 24 hours?')">
+                    ⚠️ Recent Alerts
+                </button>
+                <button class="template-btn" onclick="sendTemplate('Show unusual network activity patterns')">
+                    🌐 Network Anomalies
+                </button>
+                <button class="template-btn" onclick="sendTemplate('Generate malware detection summary for this month')">
+                    🦠 Malware Summary
+                </button>
+                <button class="template-btn" onclick="sendTemplate('List all privileged account activities')">
+                    👤 Privileged Access
+                </button>
+                <button class="template-btn" onclick="sendTemplate('Show me VPN connection failures')">
+                    🔒 VPN Failures
+                </button>
+            </div>
+        </div>
+
+        <div class="chat-container">
+            <div class="chat-header">
+                <h2>Conversational SIEM Investigation</h2>
+                <p>Ask questions in natural language - I'll translate them to KQL/DSL queries</p>
+            </div>
+
+            <div class="messages-container" id="messages">
+                <div class="message assistant">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-content">
+                        <p>👋 Hello! I'm your SIEM Assistant. I can help you investigate security events, analyze logs, and generate reports using natural language.</p>
+                        <p style="margin-top: 0.5rem;">Try asking me about:</p>
+                        <ul style="margin-left: 1.5rem; margin-top: 0.5rem; font-size: 0.9rem;">
+                            <li>Failed login attempts</li>
+                            <li>Network anomalies</li>
+                            <li>Security alerts and incidents</li>
+                            <li>Malware detections</li>
+                            <li>User activity analysis</li>
+                        </ul>
+                        <span class="context-badge">Multi-turn conversations supported</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="typing-indicator" id="typing">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <input 
+                        type="text" 
+                        class="message-input" 
+                        id="messageInput" 
+                        placeholder="Ask me anything about your security logs..."
+                        onkeypress="handleKeyPress(event)"
+                    >
+                    <button class="send-btn" onclick="sendMessage()">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simulated SIEM data
+        const mockData = {
+            failedLogins: [
+                { timestamp: '2024-01-15 09:23:45', source_ip: '192.168.1.100', username: 'admin', service: 'ssh', count: 234 },
+                { timestamp: '2024-01-15 10:15:22', source_ip: '10.0.0.50', username: 'root', service: 'rdp', count: 156 },
+                { timestamp: '2024-01-15 11:45:33', source_ip: '203.0.113.15', username: 'administrator', service: 'vpn', count: 89 },
+                { timestamp: '2024-01-15 14:20:11', source_ip: '172.16.0.25', username: 'user1', service: 'web', count: 45 }
+            ],
+            malwareDetections: [
+                { threat: 'Emotet', count: 45, severity: 'Critical' },
+                { threat: 'Ransomware', count: 31, severity: 'Critical' },
+                { threat: 'Trojan.Generic', count: 23, severity: 'High' },
+                { threat: 'Adware', count: 57, severity: 'Low' }
+            ],
+            networkAnomalies: [
+                { type: 'Port Scan', source: '45.33.32.156', target_ports: '22,80,443,3389', count: 1250 },
+                { type: 'DDoS Pattern', source: 'multiple', bandwidth: '450 Mbps', duration: '15 min' },
+                { type: 'Data Exfiltration', source: '10.0.1.50', destination: '185.220.101.45', data_size: '2.3 GB' }
+            ],
+            alerts: [
+                { severity: 'Critical', alert: 'Ransomware behavior detected', host: 'WORKSTATION-042', time: '2 hours ago' },
+                { severity: 'High', alert: 'Privilege escalation attempt', user: 'john.doe', time: '4 hours ago' },
+                { severity: 'Medium', alert: 'Suspicious PowerShell execution', host: 'SERVER-DB-01', time: '6 hours ago' },
+                { severity: 'Critical', alert: 'C2 communication detected', host: 'LAPTOP-089', time: '8 hours ago' }
+            ]
+        };
+
+        let conversationContext = [];
+        let messageId = 0;
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function sendTemplate(query) {
+            document.getElementById('messageInput').value = query;
+            sendMessage();
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+
+            // Add user message
+            addMessage(message, 'user');
+            
+            // Clear input
+            input.value = '';
+            
+            // Show typing indicator
+            showTyping();
+            
+            // Process message with delay to simulate API call
+            setTimeout(() => {
+                processQuery(message);
+                hideTyping();
+            }, 1500);
+
+            // Update context counter
+            conversationContext.push(message);
+            document.getElementById('context-count').textContent = conversationContext.length;
+        }
+
+        function processQuery(query) {
+            const lowerQuery = query.toLowerCase();
+            let response = '';
+            let kqlQuery = '';
+            let data = null;
+            let chartData = null;
+
+            // Pattern matching for different query types
+            if (lowerQuery.includes('failed') && lowerQuery.includes('login')) {
+                kqlQuery = 'event.category: "authentication" AND event.outcome: "failure"';
+                data = mockData.failedLogins;
+                
+                if (lowerQuery.includes('vpn')) {
+                    data = data.filter(d => d.service === 'vpn');
+                    kqlQuery += ' AND service.name: "vpn"';
+                    response = `Found ${data.length} VPN-related failed login attempts. The majority (87%) originated from IP 203.0.113.15.`;
+                } else {
+                    response = `Found 847 failed login attempts in the specified timeframe. Top source IPs:\n• 192.168.1.100 (234 attempts)\n• 10.0.0.50 (156 attempts)\n• 203.0.113.15 (89 attempts)`;
+                }
+                
+                // Add follow-up suggestion
+                if (!lowerQuery.includes('vpn') && conversationContext.length > 0) {
+                    response += '\n\n💡 You can refine this search by asking about specific services (VPN, SSH, RDP) or time ranges.';
+                }
+                
+            } else if (lowerQuery.includes('malware') || lowerQuery.includes('virus')) {
+                kqlQuery = 'event.category: "malware" | stats count() by malware.name';
+                data = mockData.malwareDetections;
+                chartData = data;
+                
+                response = `Malware Detection Summary:\n📊 Total detections: 156 (↑23% from last month)\n\nTop threats identified:`;
+                data.forEach(item => {
+                    response += `\n• ${item.threat}: ${item.count} detections [${item.severity}]`;
+                });
+                
+            } else if (lowerQuery.includes('network') && (lowerQuery.includes('unusual') || lowerQuery.includes('anomal'))) {
+                kqlQuery = 'network.type: "anomaly" | top 10 by event.risk_score';
+                data = mockData.networkAnomalies;
+                
+                response = `Detected 3 significant network anomalies:\n\n🔍 Pattern Analysis:`;
+                data.forEach((item, index) => {
+                    response += `\n${index + 1}. ${item.type}`;
+                    if (item.source) response += ` from ${item.source}`;
+                    if (item.count) response += ` (${item.count} attempts)`;
+                    if (item.bandwidth) response += ` - Peak: ${item.bandwidth}`;
+                });
+                
+                response += '\n\n⚠️ Recommendation: Investigate the data exfiltration attempt immediately.';
+                
+            } else if (lowerQuery.includes('alert') || lowerQuery.includes('incident')) {
+                kqlQuery = 'event.kind: "alert" | sort @timestamp desc | limit 20';
+                data = mockData.alerts;
+                
+                response = `Recent Security Alerts (Last 24 hours):\n\n`;
+                let criticalCount = data.filter(a => a.severity === 'Critical').length;
+                response += `🚨 Critical: ${criticalCount} | ⚠️ High: ${data.filter(a => a.severity === 'High').length} | ℹ️ Medium: ${data.filter(a => a.severity === 'Medium').length}\n\n`;
+                
+                response += 'Priority Incidents:\n';
+                data.filter(a => a.severity === 'Critical').forEach(alert => {
+                    response += `• [${alert.severity}] ${alert.alert} on ${alert.host} - ${alert.time}\n`;
+                });
+                
+            } else if (lowerQuery.includes('generate') && lowerQuery.includes('report')) {
+                response = '📄 Generating comprehensive security report...\n\n';
+                response += '**Executive Summary**\n';
+                response += '• Total Security Events: 3,847\n';
+                response += '• Critical Incidents: 7\n';
+                response += '• Active Threats Mitigated: 4\n';
+                response += '• Mean Time to Detect: 4.2 minutes\n\n';
+                response += '📊 Report includes interactive charts and detailed analysis.\n';
+                response += '💾 Export options: PDF, CSV, JSON';
+                
+                chartData = mockData.malwareDetections;
+                
+            } else {
+                // Handle ambiguous queries
+                response = "I need more specific information. Are you asking about:\n";
+                response += "1. 🔐 Authentication/Login events\n";
+                response += "2. 🦠 Malware detections\n";
+                response += "3. 🌐 Network traffic anomalies\n";
+                response += "4. ⚠️ Security alerts\n";
+                response += "5. 📊 Report generation\n\n";
+                response += "Please select a number or provide more details.";
+            }
+
+            addAssistantMessage(response, kqlQuery, data, chartData);
+        }
+
+        function addMessage(text, sender) {
+            const messagesContainer = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            messageDiv.innerHTML = `
+                <div class="message-avatar">${sender === 'user' ? 'U' : 'AI'}</div>
+                <div class="message-content">
+                    <p>${text}</p>
+                </div>
+            `;
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function addAssistantMessage(text, kqlQuery, tableData, chartData) {
+            const messagesContainer = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant';
+            
+            let content = `<p>${text.replace(/\n/g, '<br>')}</p>`;
+            
+            if (kqlQuery) {
+                content += `<div class="kql-query">KQL: ${kqlQuery}</div>`;
+            }
+            
+            if (tableData && Array.isArray(tableData) && !chartData) {
+                content += '<table class="results-table"><thead><tr>';
+                const keys = Object.keys(tableData[0]);
+                keys.forEach(key => {
+                    content += `<th>${key.replace(/_/g, ' ').toUpperCase()}</th>`;
+                });
+                content += '</tr></thead><tbody>';
+                tableData.slice(0, 3).forEach(row => {
+                    content += '<tr>';
+                    keys.forEach(key => {
+                        content += `<td>${row[key]}</td>`;
+                    });
+                    content += '</tr>';
+                });
+                content += '</tbody></table>';
+            }
+            
+            if (chartData) {
+                content += '<div class="chart-container">';
+                content += '<div class="chart-bars">';
+                const maxValue = Math.max(...chartData.map(d => d.count));
+                chartData.forEach(item => {
+                    const height = (item.count / maxValue) * 100;
+                    content += `
+                        <div class="chart-bar" style="height: ${height}%">
+                            <span class="chart-value">${item.count}</span>
+                            <span class="chart-label">${item.threat}</span>
+                        </div>
+                    `;
+                });
+                content += '</div></div>';
+            }
+            
+            if (conversationContext.length > 1) {
+                content += `<span class="context-badge">Context: ${conversationContext.length} messages</span>`;
+            }
+            
+            messageDiv.innerHTML = `
+                <div class="message-avatar">AI</div>
+                <div class="message-content">
+                    ${content}
+                </div>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function showTyping() {
+            document.getElementById('typing').classList.add('active');
+        }
+
+        function hideTyping() {
+            document.getElementById('typing').classList.remove('active');
+        }
+
+        // Simulate SIEM connection status changes
+        setInterval(() => {
+            const status = document.getElementById('siem-status');
+            const indicator = document.querySelector('.status-indicator');
+            const isConnected = Math.random() > 0.1;
+            
+            if (isConnected) {
+                status.textContent = 'Elastic SIEM Connected';
+                indicator.classList.add('connected');
+                indicator.classList.remove('disconnected');
+            } else {
+                status.textContent = 'Reconnecting...';
+                indicator.classList.remove('connected');
+                indicator.classList.add('disconnected');
+            }
+        }, 10000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+Flask==3.0.0
+Flask-CORS==4.0.0
+elasticsearch==8.11.0
+requests==2.31.0
+python-dateutil==2.8.2
+transformers==4.36.0
+torch==2.1.0
+pandas==2.1.4
+numpy==1.24.3
+redis==5.0.1
+python-dotenv==1.0.0
+gunicorn==21.2.0
