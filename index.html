@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CyberChat AI - ISRO Conversational SIEM Assistant</title>
+    <title>Advanced SIEM Assistant - ISRO Cybersecurity Intelligence</title>
     <style>
         * {
             margin: 0;
@@ -11,860 +11,1507 @@
             box-sizing: border-box;
         }
 
+        :root {
+            --primary-color: #2563eb;
+            --secondary-color: #1e40af;
+            --accent-color: #3b82f6;
+            --danger-color: #dc2626;
+            --warning-color: #f59e0b;
+            --success-color: #16a34a;
+            --background-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --dark-bg: #0f172a;
+            --card-bg: rgba(255, 255, 255, 0.95);
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --border-color: #e2e8f0;
+        }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #0f1419 0%, #1e2640 50%, #0d1829 100%);
-            color: #ffffff;
-            overflow-x: hidden;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--background-gradient);
+            min-height: 100vh;
+            color: var(--text-primary);
+            line-height: 1.6;
         }
 
-        /* ISRO Header */
-        .isro-header {
-            background: linear-gradient(90deg, #ff6b35, #f7931e);
-            padding: 15px 0;
-            text-align: center;
-            box-shadow: 0 4px 20px rgba(255, 107, 53, 0.3);
-        }
-
-        .isro-header h1 {
-            font-size: 28px;
-            font-weight: bold;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-        }
-
-        .isro-header .subtitle {
-            font-size: 14px;
-            margin-top: 5px;
-            opacity: 0.9;
-        }
-
-        /* Main Container */
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
             padding: 20px;
-            display: grid;
-            grid-template-columns: 1fr 300px;
-            grid-gap: 20px;
-            height: calc(100vh - 120px);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
 
-        /* Chat Interface */
-        .chat-container {
-            background: rgba(255, 255, 255, 0.05);
+        /* Header Styles */
+        .header {
+            background: var(--card-bg);
             backdrop-filter: blur(10px);
             border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-        }
-
-        .chat-header {
-            background: rgba(255, 107, 53, 0.2);
-            padding: 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .chat-header h2 {
-            font-size: 20px;
-            margin-bottom: 8px;
-        }
-
-        .chat-header .status {
-            font-size: 14px;
-            color: #4ade80;
+            padding: 20px 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
             display: flex;
             align-items: center;
-            gap: 8px;
+            justify-content: space-between;
         }
 
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #4ade80;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        /* Chat Messages */
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
+        .header-left {
             display: flex;
-            flex-direction: column;
+            align-items: center;
             gap: 20px;
         }
 
-        .message {
-            max-width: 85%;
-            padding: 15px 20px;
-            border-radius: 18px;
-            animation: messageSlide 0.3s ease-out;
-        }
-
-        @keyframes messageSlide {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .message.user {
-            align-self: flex-end;
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            color: white;
-        }
-
-        .message.assistant {
-            align-self: flex-start;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .message-content {
-            margin-bottom: 8px;
-        }
-
-        .message-meta {
-            font-size: 12px;
-            opacity: 0.7;
+        .logo {
+            width: 60px;
+            height: 60px;
+            background: var(--background-gradient);
+            border-radius: 15px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
 
-        .kql-display {
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 107, 53, 0.3);
-            border-radius: 8px;
-            padding: 12px;
-            margin: 10px 0;
-            font-family: 'Courier New', monospace;
+        .header-title {
+            color: var(--primary-color);
+            font-size: 32px;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .header-subtitle {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-top: 2px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: rgba(34, 197, 94, 0.1);
+            border-radius: 25px;
+            border: 1px solid rgba(34, 197, 94, 0.2);
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--success-color);
+            animation: pulse 2s infinite;
+        }
+
+        .confidence-meter {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .confidence-bar {
+            width: 80px;
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #dc2626, #f59e0b, #16a34a);
+            transition: width 0.3s ease;
+            width: 70%;
+        }
+
+        /* Main Layout */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+
+        .sidebar-section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .quick-queries {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .quick-query {
+            padding: 12px 16px;
+            background: rgba(59, 130, 246, 0.05);
+            border: 1px solid rgba(59, 130, 246, 0.1);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .quick-query:hover {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: var(--accent-color);
+            transform: translateX(5px);
+        }
+
+        .advanced-filters {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .filter-group {
+            background: rgba(248, 250, 252, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+        }
+
+        .filter-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
             font-size: 13px;
-        }
-
-        .kql-display .label {
-            color: #ff6b35;
-            font-size: 11px;
-            margin-bottom: 5px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
 
-        /* Input Area */
-        .chat-input {
-            padding: 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .input-group {
+        .filter-options {
             display: flex;
-            gap: 12px;
-            align-items: flex-end;
+            flex-wrap: wrap;
+            gap: 6px;
         }
 
-        .input-field {
-            flex: 1;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 25px;
-            padding: 15px 20px;
-            color: white;
-            font-size: 14px;
-            resize: none;
-            min-height: 50px;
-            max-height: 120px;
-            outline: none;
-            transition: all 0.3s ease;
-        }
-
-        .input-field:focus {
-            border-color: #ff6b35;
-            box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2);
-        }
-
-        .input-field::placeholder {
-            color: rgba(255, 255, 255, 0.5);
-        }
-
-        .send-button {
-            background: linear-gradient(135deg, #ff6b35, #f7931e);
-            border: none;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
+        .filter-tag {
+            padding: 4px 10px;
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 15px;
+            font-size: 12px;
             cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .filter-tag:hover {
+            background: var(--accent-color);
+            color: white;
+            border-color: var(--accent-color);
+        }
+
+        .filter-tag.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        /* Chat Interface */
+        .chat-interface {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid var(--border-color);
+            background: rgba(248, 250, 252, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: between;
+        }
+
+        .chat-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 25px;
+            overflow-y: auto;
+            background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            margin-bottom: 25px;
+            animation: messageSlide 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        @keyframes messageSlide {
+            from {
+                opacity: 0;
+                transform: translateY(20px) scale(0.98);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .message.user {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .message.assistant {
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        .message-bubble {
+            max-width: 75%;
+            padding: 20px 25px;
+            border-radius: 20px;
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .message.user .message-bubble {
+            background: var(--background-gradient);
+            color: white;
+            border-bottom-right-radius: 8px;
+        }
+
+        .message.assistant .message-bubble {
+            background: white;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-bottom-left-radius: 8px;
+        }
+
+        .message-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        .confidence-badge {
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .confidence-high { background: rgba(34, 197, 94, 0.1); color: #16a34a; }
+        .confidence-medium { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+        .confidence-low { background: rgba(239, 68, 68, 0.1); color: #dc2626; }
+
+        /* Enhanced Tables */
+        .results-container {
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .enhanced-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .enhanced-table th {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 15px 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .enhanced-table td {
+            padding: 12px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 13px;
+            vertical-align: middle;
+        }
+
+        .enhanced-table tbody tr:hover {
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .threat-indicator {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .threat-high { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+        .threat-medium { background: #fffbeb; color: #f59e0b; border: 1px solid #fed7aa; }
+        .threat-low { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+
+        /* Statistics Dashboard */
+        .stats-dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #ffffff, #f8fafc);
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid var(--border-color);
+            text-align: center;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: var(--background-gradient);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: 800;
+            color: var(--primary-color);
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        .stat-trend {
+            font-size: 12px;
+            margin-top: 8px;
+            padding: 4px 8px;
+            border-radius: 10px;
+        }
+
+        .trend-up { background: #f0fdf4; color: #16a34a; }
+        .trend-down { background: #fef2f2; color: #dc2626; }
+
+        /* Visualization Panel */
+        .viz-panel {
+            margin-top: 20px;
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .viz-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .viz-tab {
+            padding: 10px 20px;
+            border-radius: 10px 10px 0 0;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+
+        .viz-tab:hover {
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .viz-tab.active {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .viz-content {
+            min-height: 300px;
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+
+        .viz-image {
+            max-width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+
+        /* Input Area */
+        .chat-input-area {
+            padding: 25px 30px;
+            background: rgba(248, 250, 252, 0.8);
+            border-top: 1px solid var(--border-color);
+        }
+
+        .input-container {
+            position: relative;
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 18px 25px;
+            border: 2px solid var(--border-color);
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
             transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(255, 107, 53, 0.3);
+            background: white;
+            resize: none;
+            min-height: 56px;
+            max-height: 120px;
+            font-family: inherit;
+        }
+
+        .chat-input:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+        }
+
+        .input-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .send-button {
+            padding: 18px 30px;
+            background: var(--background-gradient);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            min-width: 120px;
+            position: relative;
+            overflow: hidden;
         }
 
         .send-button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(255, 107, 53, 0.4);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
         }
 
         .send-button:disabled {
-            opacity: 0.5;
+            opacity: 0.6;
             cursor: not-allowed;
             transform: none;
         }
 
-        /* Sidebar */
-        .sidebar {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .sidebar-panel {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 20px;
-        }
-
-        .sidebar-panel h3 {
-            font-size: 16px;
-            margin-bottom: 15px;
-            color: #ff6b35;
-        }
-
-        /* Performance Metrics */
-        .metric {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 12px;
-            font-size: 14px;
-        }
-
-        .metric-value {
-            color: #4ade80;
-            font-weight: bold;
-        }
-
-        .metric-value.warning {
-            color: #fbbf24;
-        }
-
-        .metric-value.critical {
-            color: #ef4444;
-        }
-
-        /* Mission Status */
-        .mission-item {
-            padding: 10px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-            margin-bottom: 10px;
-            font-size: 13px;
-        }
-
-        .mission-name {
-            font-weight: bold;
-            color: #ff6b35;
-            margin-bottom: 4px;
-        }
-
-        .mission-status {
-            font-size: 11px;
-            opacity: 0.8;
-        }
-
-        /* Quick Actions */
-        .quick-action {
-            background: rgba(255, 107, 53, 0.1);
-            border: 1px solid rgba(255, 107, 53, 0.3);
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-size: 13px;
-            text-align: center;
-        }
-
-        .quick-action:hover {
-            background: rgba(255, 107, 53, 0.2);
-            border-color: rgba(255, 107, 53, 0.5);
-        }
-
-        /* Processing Animation */
-        .processing {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 15px 20px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 18px;
-            margin: 10px 0;
-        }
-
-        .processing-dots {
-            display: flex;
-            gap: 4px;
-        }
-
-        .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #ff6b35;
-            animation: dotPulse 1.5s infinite;
-        }
-
-        .dot:nth-child(2) { animation-delay: 0.2s; }
-        .dot:nth-child(3) { animation-delay: 0.4s; }
-
-        @keyframes dotPulse {
-            0%, 60%, 100% { opacity: 0.3; transform: scale(1); }
-            30% { opacity: 1; transform: scale(1.2); }
-        }
-
-        /* Results Display */
-        .results-summary {
-            background: rgba(76, 175, 80, 0.1);
-            border-left: 4px solid #4caf50;
-            padding: 12px;
-            border-radius: 0 8px 8px 0;
-            margin: 10px 0;
-        }
-
-        .results-count {
-            font-weight: bold;
-            color: #4caf50;
-        }
-
-        /* Suggestions */
-        .suggestions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 10px;
-        }
-
-        .suggestion {
-            background: rgba(255, 107, 53, 0.2);
-            border: 1px solid rgba(255, 107, 53, 0.4);
+        .advanced-button {
+            padding: 8px 16px;
+            background: white;
+            border: 2px solid var(--border-color);
             border-radius: 20px;
-            padding: 6px 12px;
-            font-size: 12px;
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
         }
 
-        .suggestion:hover {
-            background: rgba(255, 107, 53, 0.3);
+        .advanced-button:hover {
+            background: var(--accent-color);
+            color: white;
+            border-color: var(--accent-color);
+        }
+
+        /* Loading and Animations */
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+        }
+
+        /* Welcome Screen */
+        .welcome-screen {
+            text-align: center;
+            padding: 60px 40px;
+            color: var(--text-secondary);
+        }
+
+        .welcome-title {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--primary-color);
+            margin-bottom: 15px;
+        }
+
+        .welcome-subtitle {
+            font-size: 18px;
+            margin-bottom: 40px;
+            line-height: 1.6;
+        }
+
+        .feature-showcase {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 25px;
+            margin-top: 40px;
+        }
+
+        .feature-card {
+            background: linear-gradient(135deg, #ffffff, #f8fafc);
+            padding: 25px;
+            border-radius: 15px;
+            border: 1px solid var(--border-color);
+            text-align: left;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.1);
+        }
+
+        .feature-icon {
+            font-size: 32px;
+            margin-bottom: 15px;
+        }
+
+        .feature-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+
+        .feature-desc {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.6;
         }
 
         /* Responsive Design */
-        @media (max-width: 1024px) {
+        @media (max-width: 1200px) {
+            .main-layout {
+                grid-template-columns: 300px 1fr;
+            }
+            
             .container {
-                grid-template-columns: 1fr;
-                grid-template-rows: 1fr auto;
-            }
-            
-            .sidebar {
-                flex-direction: row;
-                overflow-x: auto;
-            }
-            
-            .sidebar-panel {
-                min-width: 250px;
+                padding: 15px;
             }
         }
 
         @media (max-width: 768px) {
-            .container {
-                padding: 10px;
+            .main-layout {
+                grid-template-columns: 1fr;
             }
             
             .sidebar {
-                flex-direction: column;
+                max-height: 200px;
+                order: 2;
             }
             
-            .sidebar-panel {
-                min-width: unset;
+            .chat-interface {
+                order: 1;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            
+            .feature-showcase {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-dashboard {
+                grid-template-columns: repeat(2, 1fr);
             }
         }
 
-        /* Custom Scrollbar */
+        /* Scrollbar Styling */
         ::-webkit-scrollbar {
-            width: 6px;
+            width: 8px;
         }
 
         ::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.1);
+            background: #f1f5f9;
         }
 
         ::-webkit-scrollbar-thumb {
-            background: rgba(255, 107, 53, 0.5);
-            border-radius: 3px;
+            background: var(--accent-color);
+            border-radius: 4px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 107, 53, 0.7);
+            background: var(--primary-color);
         }
     </style>
 </head>
 <body>
-    <!-- ISRO Header -->
-    <div class="isro-header">
-        <h1>CyberChat AI - ISRO Conversational SIEM Assistant</h1>
-        <div class="subtitle">Securing India's Space Mission Infrastructure</div>
-    </div>
-
     <div class="container">
-        <!-- Main Chat Interface -->
-        <div class="chat-container">
-            <div class="chat-header">
-                <h2>Mission Security Operations Center</h2>
-                <div class="status">
-                    <span class="status-dot"></span>
-                    <span>AI Assistant Online • SIEM Connected • All Systems Operational</span>
+        <!-- Enhanced Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">AI</div>
+                <div>
+                    <h1 class="header-title">SIEM Intelligence Assistant</h1>
+                    <p class="header-subtitle">Advanced Cybersecurity Analytics for ISRO</p>
                 </div>
             </div>
-
-            <div class="chat-messages" id="chatMessages">
-                <!-- Welcome Message -->
-                <div class="message assistant">
-                    <div class="message-content">
-                        <strong>Welcome to CyberChat AI - ISRO's Advanced Conversational SIEM Assistant!</strong>
-                        <br><br>
-                        I'm your AI-powered security analyst, specialized in protecting India's space mission infrastructure. I can help you:
-                        <br><br>
-                        <strong>Investigate Security Events:</strong> "Show failed login attempts from yesterday"<br>
-                        <strong>Monitor Mission-Critical Systems:</strong> "Check satellite communication anomalies during Chandrayaan mission"<br>
-                        <strong>Generate Comprehensive Reports:</strong> "Create security summary for Aditya-L1 operations"<br>
-                        <strong>Analyze Threat Patterns:</strong> "Find suspicious network activity at ground stations"
-                        <br><br>
-                        <strong>Try asking me something about ISRO's cybersecurity!</strong>
+            <div class="header-right">
+                <div class="confidence-meter">
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" id="confidenceBar"></div>
                     </div>
-                    <div class="message-meta">
-                        <span>CyberChat AI • Security Domain Expert</span>
-                        <span>Ready for Mission</span>
+                    <span id="confidenceText">AI Confidence</span>
+                </div>
+                <div class="status-indicator">
+                    <div class="status-dot"></div>
+                    <span>System Online</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Layout -->
+        <div class="main-layout">
+            <!-- Enhanced Sidebar -->
+            <aside class="sidebar">
+                <!-- Quick Queries Section -->
+                <div class="sidebar-section">
+                    <h2 class="sidebar-title">🚀 Quick Queries</h2>
+                    <div class="quick-queries">
+                        <div class="quick-query" onclick="sendQuery(this.textContent)">
+                            Show critical security events from last 24 hours
+                        </div>
+                        <div class="quick-query" onclick="sendQuery(this.textContent)">
+                            Analyze failed authentication attempts with geographic data
+                        </div>
+                        <div class="quick-query" onclick="sendQuery(this.textContent)">
+                            Generate malware detection report with timeline
+                        </div>
+                        <div class="quick-query" onclick="sendQuery(this.textContent)">
+                            Compare network traffic patterns versus baseline
+                        </div>
+                        <div class="quick-query" onclick="sendQuery(this.textContent)">
+                            Identify anomalous user behavior patterns
+                        </div>
+                        <div class="quick-query" onclick="sendQuery(this.textContent)">
+                            Create executive dashboard for threat landscape
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="chat-input">
-                <div class="input-group">
-                    <textarea 
-                        id="messageInput" 
-                        class="input-field" 
-                        placeholder="Ask about ISRO cybersecurity... (e.g., 'Show failed logins from yesterday' or 'Check Chandrayaan communication security')"
-                        rows="1"></textarea>
-                    <button id="sendButton" class="send-button">
-                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                        </svg>
-                    </button>
+                <!-- Advanced Filters -->
+                <div class="sidebar-section">
+                    <h2 class="sidebar-title">🔧 Advanced Filters</h2>
+                    <div class="advanced-filters">
+                        <div class="filter-group">
+                            <div class="filter-title">Event Types</div>
+                            <div class="filter-options">
+                                <div class="filter-tag" data-filter="authentication">Authentication</div>
+                                <div class="filter-tag" data-filter="malware">Malware</div>
+                                <div class="filter-tag" data-filter="network">Network</div>
+                                <div class="filter-tag" data-filter="file_access">File Access</div>
+                                <div class="filter-tag" data-filter="process">Process</div>
+                            </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <div class="filter-title">Severity Levels</div>
+                            <div class="filter-options">
+                                <div class="filter-tag" data-filter="critical">Critical</div>
+                                <div class="filter-tag" data-filter="high">High</div>
+                                <div class="filter-tag" data-filter="medium">Medium</div>
+                                <div class="filter-tag" data-filter="low">Low</div>
+                            </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <div class="filter-title">Time Ranges</div>
+                            <div class="filter-options">
+                                <div class="filter-tag" data-filter="1h">Last Hour</div>
+                                <div class="filter-tag" data-filter="24h">24 Hours</div>
+                                <div class="filter-tag" data-filter="7d">7 Days</div>
+                                <div class="filter-tag" data-filter="30d">30 Days</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
 
-        <!-- Sidebar -->
-        <div class="sidebar">
-            <!-- Performance Metrics -->
-            <div class="sidebar-panel">
-                <h3>System Performance</h3>
-                <div class="metric">
-                    <span>Query Response Time:</span>
-                    <span class="metric-value" id="responseTime">1.2s</span>
+                <!-- AI Analysis Tools -->
+                <div class="sidebar-section">
+                    <h2 class="sidebar-title">AI Analytics</h2>
+                    <div class="filter-options">
+                        <div class="advanced-button" onclick="triggerAnalysis('anomaly')">Anomaly Detection</div>
+                        <div class="advanced-button" onclick="triggerAnalysis('correlation')">Correlation Analysis</div>
+                        <div class="advanced-button" onclick="triggerAnalysis('prediction')">Threat Prediction</div>
+                        <div class="advanced-button" onclick="triggerAnalysis('timeline')">Timeline Analysis</div>
+                    </div>
                 </div>
-                <div class="metric">
-                    <span>Translation Accuracy:</span>
-                    <span class="metric-value" id="accuracy">94%</span>
-                </div>
-                <div class="metric">
-                    <span>Context Retention:</span>
-                    <span class="metric-value" id="contextRetention">98%</span>
-                </div>
-                <div class="metric">
-                    <span>Active Sessions:</span>
-                    <span class="metric-value" id="activeSessions">12</span>
-                </div>
-                <div class="metric">
-                    <span>SIEM Status:</span>
-                    <span class="metric-value" id="siemStatus">Online</span>
-                </div>
-            </div>
+            </aside>
 
-            <!-- Mission Status -->
-            <div class="sidebar-panel">
-                <h3>Active Missions</h3>
-                <div class="mission-item">
-                    <div class="mission-name">Chandrayaan-3</div>
-                    <div class="mission-status">Secure • Surface Operations • 247 events monitored</div>
+            <!-- Main Chat Interface -->
+            <main class="chat-interface">
+                <div class="chat-header">
+                    <h2 class="chat-title">Cybersecurity Intelligence Console</h2>
                 </div>
-                <div class="mission-item">
-                    <div class="mission-name">Aditya-L1</div>
-                    <div class="mission-status">Monitoring • L1 Transit • 156 events monitored</div>
-                </div>
-                <div class="mission-item">
-                    <div class="mission-name">Gaganyaan</div>
-                    <div class="mission-status">Secure • Pre-flight Testing • 89 events monitored</div>
-                </div>
-                <div class="mission-item">
-                    <div class="mission-name">NavIC</div>
-                    <div class="mission-status">Operational • Navigation Services • 334 events monitored</div>
-                </div>
-            </div>
 
-            <!-- Quick Actions -->
-            <div class="sidebar-panel">
-                <h3>Quick Security Queries</h3>
-                <div class="quick-action" data-query="Show failed login attempts from yesterday">
-                    Failed Login Analysis
+                <div class="chat-messages" id="chatMessages">
+                    <div class="welcome-screen">
+                        <h2 class="welcome-title">Advanced SIEM Intelligence Assistant</h2>
+                        <p class="welcome-subtitle">
+                            Leverage artificial intelligence for sophisticated cybersecurity analysis, 
+                            threat hunting, and automated incident response with natural language queries.
+                        </p>
+                        
+                        <div class="feature-showcase">
+                            <div class="feature-card">
+                                <div class="feature-icon">🧠</div>
+                                <div class="feature-title">Advanced NLP Processing</div>
+                                <div class="feature-desc">
+                                    Sophisticated natural language understanding with context awareness, 
+                                    entity recognition, and semantic query translation.
+                                </div>
+                            </div>
+                            <div class="feature-card">
+                                <div class="feature-icon">📊</div>
+                                <div class="feature-title">Intelligent Visualizations</div>
+                                <div class="feature-desc">
+                                    Auto-generated charts, network graphs, geographic maps, and 
+                                    threat landscape visualizations with interactive analytics.
+                                </div>
+                            </div>
+                            <div class="feature-card">
+                                <div class="feature-icon">🔍</div>
+                                <div class="feature-title">Anomaly Detection</div>
+                                <div class="feature-desc">
+                                    Machine learning-powered anomaly detection with pattern recognition, 
+                                    behavioral analysis, and predictive threat intelligence.
+                                </div>
+                            </div>
+                            <div class="feature-card">
+                                <div class="feature-icon">🔗</div>
+                                <div class="feature-title">Correlation Engine</div>
+                                <div class="feature-desc">
+                                    Advanced correlation analysis linking events across time, users, 
+                                    and systems to identify attack chains and campaign patterns.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="quick-action" data-query="Check satellite communication anomalies during Chandrayaan mission">
-                    Satellite Comm Security
+
+                <div class="chat-input-area">
+                    <div class="input-container">
+                        <textarea 
+                            class="chat-input" 
+                            id="chatInput" 
+                            placeholder="Ask me anything about your security environment... (e.g., 'Show me suspicious authentication patterns from external IPs in the last 48 hours')"
+                            rows="1"
+                        ></textarea>
+                        <div class="input-actions">
+                            <button class="send-button" id="sendButton" onclick="sendMessage()">
+                                Send Query
+                            </button>
+                            <button class="advanced-button" onclick="toggleAdvancedMode()">
+                                Advanced Mode
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <div class="quick-action" data-query="Generate security report for ground station authentication">
-                    Ground Station Security
-                </div>
-                <div class="quick-action" data-query="Find suspicious network activity at mission control">
-                    Network Threat Analysis
-                </div>
-                <div class="quick-action" data-query="Show malware detections in the last week">
-                    Malware Investigation
-                </div>
-            </div>
+            </main>
         </div>
     </div>
 
     <script>
-        // Enhanced Demo Application
-        class ISROSIEMDemo {
-            constructor() {
-                this.initializeElements();
-                this.setupEventListeners();
-                this.initializePerformanceMetrics();
-                this.conversationContext = [];
-                this.processingQuery = false;
-                
-                // Demo responses database
-                this.responses = {
-                    'failed login': {
-                        summary: 'Found 127 failed authentication attempts in the last 24 hours',
-                        kql: 'event.outcome:failure AND event.category:authentication AND @timestamp:[now-24h TO now]',
-                        data: [
-                            { timestamp: '2025-01-15T14:23:45Z', user: 'mission_controller_lead', source_ip: '203.192.45.123', attempts: 15, facility: 'VSSC' },
-                            { timestamp: '2025-01-15T15:45:22Z', user: 'satellite_operator', source_ip: '10.0.15.89', attempts: 8, facility: 'SHAR' }
-                        ],
-                        insights: ['Multiple failed attempts from external IP addresses', 'Geolocation shows attempts from unusual regions', 'Brute force pattern detected on privileged accounts'],
-                        suggestions: ['Filter by VPN attempts', 'Show geographic distribution', 'Generate timeline view', 'Check user behavior patterns']
-                    },
-                    'satellite communication': {
-                        summary: 'Monitoring 23 satellite communication events with 2 anomalies detected during Chandrayaan mission phases',
-                        kql: 'mission.name:chandrayaan* AND service.name:satellite_comm AND @timestamp:[now-7d TO now]',
-                        data: [
-                            { timestamp: '2025-01-15T16:12:33Z', satellite: 'Chandrayaan-3 Orbiter', anomaly: 'signal_interference', duration: '4m 32s', ground_station: 'IDSN_Byalalu' },
-                            { timestamp: '2025-01-14T11:30:15Z', satellite: 'Chandrayaan-3 Lander', anomaly: 'communication_delay', duration: '2m 15s', ground_station: 'ISTRAC_Hassan' }
-                        ],
-                        insights: ['Temporary communication disruptions during critical mission phases', 'All anomalies resolved within acceptable timeframes', 'Pattern suggests external interference sources'],
-                        suggestions: ['Analyze interference sources', 'Generate mission timeline', 'Check ground station logs', 'Compare with weather data']
-                    },
-                    'ground station': {
-                        summary: 'Security analysis of 15 ISRO ground stations shows 89 authentication events with 12 requiring attention',
-                        kql: 'tags:ground_station AND event.category:authentication AND @timestamp:[now-24h TO now]',
-                        data: [
-                            { timestamp: '2025-01-15T13:45:30Z', station: 'VSSC_Thumba', event: 'privileged_access', user: 'mission_director', status: 'success' },
-                            { timestamp: '2025-01-15T14:22:18Z', station: 'SHAR_Sriharikota', event: 'failed_login', user: 'unknown', attempts: 25, status: 'blocked' }
-                        ],
-                        insights: ['All critical ground stations operational and secure', 'Multi-factor authentication working effectively', 'Real-time monitoring active across all facilities'],
-                        suggestions: ['Show station status map', 'Generate facility security report', 'Check access patterns', 'Monitor critical systems']
-                    },
-                    'mission control': {
-                        summary: 'Mission control security monitoring shows 156 events across all active missions with high security posture',
-                        kql: 'host.name:*mission-control* AND tags:mission_control AND @timestamp:[now-12h TO now]',
-                        data: [
-                            { timestamp: '2025-01-15T16:30:45Z', facility: 'Mission_Control_Bangalore', mission: 'aditya-l1', event: 'system_access', user: 'flight_director', clearance: 'top_secret' },
-                            { timestamp: '2025-01-15T17:15:22Z', facility: 'Launch_Control_SHAR', mission: 'gaganyaan', event: 'security_scan', result: 'clean', automated: true }
-                        ],
-                        insights: ['All mission control centers operating at maximum security', 'Real-time monitoring during critical mission phases', 'Zero security incidents in the last 48 hours'],
-                        suggestions: ['Show mission timeline', 'Generate control center status', 'Check communication links', 'Monitor crew safety systems']
-                    },
-                    'malware': {
-                        summary: 'Comprehensive malware scan completed: 0 active threats detected, 245 files scanned, all systems clean',
-                        kql: 'event.category:malware OR threat.indicator.type:malware AND @timestamp:[now-7d TO now]',
-                        data: [
-                            { timestamp: '2025-01-14T09:15:30Z', system: 'Ground_Control_VSSC', scan_result: 'clean', files_scanned: 125420, threats_found: 0 },
-                            { timestamp: '2025-01-13T14:22:45Z', system: 'Mission_Control_ISAC', scan_result: 'clean', files_scanned: 98765, threats_found: 0 }
-                        ],
-                        insights: ['All ISRO systems are malware-free and secure', 'Advanced threat detection systems operating normally', 'Continuous monitoring active across all critical infrastructure'],
-                        suggestions: ['Schedule deep system scan', 'Review threat intelligence', 'Check endpoint protection', 'Generate compliance report']
-                    },
-                    'security report': {
-                        summary: 'Comprehensive security report generated covering all ISRO facilities and active missions',
-                        kql: '* | stats count() by facility, mission, severity | sort count desc',
-                        data: [
-                            { facility: 'VSSC', total_events: 1247, critical: 2, high: 15, medium: 234, missions: ['Chandrayaan-3', 'General Operations'] },
-                            { facility: 'SHAR', total_events: 856, critical: 1, high: 8, medium: 127, missions: ['Gaganyaan', 'PSLV Operations'] }
-                        ],
-                        insights: ['Overall security posture: EXCELLENT', 'All space missions operating within security parameters', 'Response time for critical incidents: <5 minutes average'],
-                        suggestions: ['Export detailed report', 'Schedule executive briefing', 'Update security protocols', 'Review incident responses']
-                    }
-                };
-            }
+        // Application state
+        let sessionId = 'session_' + Date.now();
+        let conversationHistory = [];
+        let activeFilters = {};
+        let advancedMode = false;
 
-            initializeElements() {
-                this.chatMessages = document.getElementById('chatMessages');
-                this.messageInput = document.getElementById('messageInput');
-                this.sendButton = document.getElementById('sendButton');
-                this.responseTime = document.getElementById('responseTime');
-                this.accuracy = document.getElementById('accuracy');
-                this.contextRetention = document.getElementById('contextRetention');
-                this.activeSessions = document.getElementById('activeSessions');
-                this.siemStatus = document.getElementById('siemStatus');
-            }
+        // Initialize application
+        document.addEventListener('DOMContentLoaded', function() {
+            setupEventListeners();
+            setupAutoResize();
+            focusInput();
+        });
 
-            setupEventListeners() {
-                this.sendButton.addEventListener('click', () => this.sendMessage());
-                this.messageInput.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        this.sendMessage();
-                    }
-                });
-
-                // Auto-resize textarea
-                this.messageInput.addEventListener('input', () => {
-                    this.messageInput.style.height = 'auto';
-                    this.messageInput.style.height = this.messageInput.scrollHeight + 'px';
-                });
-
-                // Quick action buttons
-                document.querySelectorAll('.quick-action').forEach(button => {
-                    button.addEventListener('click', () => {
-                        const query = button.getAttribute('data-query');
-                        this.messageInput.value = query;
-                        this.sendMessage();
-                    });
-                });
-            }
-
-            initializePerformanceMetrics() {
-                // Simulate real-time metrics updates
-                setInterval(() => {
-                    this.responseTime.textContent = (Math.random() * 1.5 + 0.8).toFixed(1) + 's';
-                    this.accuracy.textContent = (Math.random() * 6 + 90).toFixed(0) + '%';
-                    this.contextRetention.textContent = (Math.random() * 3 + 96).toFixed(0) + '%';
-                    this.activeSessions.textContent = Math.floor(Math.random() * 15 + 8);
-                    
-                    const statuses = ['Online', 'Syncing', 'High Load'];
-                    const status = statuses[Math.floor(Math.random() * statuses.length)];
-                    this.siemStatus.textContent = status;
-                    this.siemStatus.className = 'metric-value ' + (status === 'Online' ? '' : status === 'Syncing' ? 'warning' : 'critical');
-                }, 3000);
-            }
-
-            async sendMessage() {
-                const message = this.messageInput.value.trim();
-                if (!message || this.processingQuery) return;
-
-                this.processingQuery = true;
-                this.sendButton.disabled = true;
-                
-                // Add user message
-                this.addMessage('user', message);
-                this.messageInput.value = '';
-                this.messageInput.style.height = 'auto';
-
-                // Show processing
-                const processingElement = this.showProcessing();
-
-                // Simulate processing delay
-                await this.delay(1500 + Math.random() * 1000);
-
-                // Remove processing indicator
-                processingElement.remove();
-
-                // Generate AI response
-                const response = this.generateResponse(message);
-                this.addMessage('assistant', response.content, response.kql, response.metadata);
-
-                // Add suggestions if available
-                if (response.suggestions && response.suggestions.length > 0) {
-                    this.addSuggestions(response.suggestions);
+        function setupEventListeners() {
+            // Enter key handling for textarea
+            document.getElementById('chatInput').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
                 }
+            });
 
-                this.processingQuery = false;
-                this.sendButton.disabled = false;
-            }
-
-            addMessage(sender, content, kql = null, metadata = null) {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message ${sender}`;
-
-                let messageContent = `<div class="message-content">${content}</div>`;
-
-                if (kql) {
-                    messageContent += `
-                        <div class="kql-display">
-                            <div class="label">Generated Query</div>
-                            <div>${kql}</div>
-                        </div>
-                    `;
-                }
-
-                if (metadata && metadata.results_count) {
-                    messageContent += `
-                        <div class="results-summary">
-                            <span class="results-count">${metadata.results_count} events found</span> • 
-                            Processing time: ${metadata.processing_time} • 
-                            Confidence: ${metadata.confidence}%
-                        </div>
-                    `;
-                }
-
-                const timestamp = new Date().toLocaleTimeString();
-                messageContent += `
-                    <div class="message-meta">
-                        <span>${sender === 'user' ? 'Security Analyst' : 'CyberChat AI'}</span>
-                        <span>${timestamp}</span>
-                    </div>
-                `;
-
-                messageDiv.innerHTML = messageContent;
-                this.chatMessages.appendChild(messageDiv);
-                this.scrollToBottom();
-            }
-
-            addSuggestions(suggestions) {
-                const suggestionsDiv = document.createElement('div');
-                suggestionsDiv.className = 'suggestions';
-
-                suggestions.forEach(suggestion => {
-                    const suggestionButton = document.createElement('div');
-                    suggestionButton.className = 'suggestion';
-                    suggestionButton.textContent = suggestion;
-                    suggestionButton.addEventListener('click', () => {
-                        this.messageInput.value = suggestion;
-                        this.sendMessage();
-                    });
-                    suggestionsDiv.appendChild(suggestionButton);
+            // Filter tag interactions
+            document.querySelectorAll('.filter-tag').forEach(tag => {
+                tag.addEventListener('click', function() {
+                    toggleFilter(this);
                 });
+            });
+        }
 
-                this.chatMessages.appendChild(suggestionsDiv);
-                this.scrollToBottom();
+        function setupAutoResize() {
+            const textarea = document.getElementById('chatInput');
+            textarea.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            });
+        }
+
+        function focusInput() {
+            document.getElementById('chatInput').focus();
+        }
+
+        function sendQuery(queryText) {
+            document.getElementById('chatInput').value = queryText;
+            sendMessage();
+        }
+
+        function toggleFilter(element) {
+            element.classList.toggle('active');
+            const filterType = element.getAttribute('data-filter');
+            
+            if (element.classList.contains('active')) {
+                activeFilters[filterType] = true;
+            } else {
+                delete activeFilters[filterType];
             }
+            
+            updateActiveFiltersDisplay();
+        }
 
-            showProcessing() {
-                const processingDiv = document.createElement('div');
-                processingDiv.className = 'processing';
-                processingDiv.innerHTML = `
-                    <div class="processing-dots">
-                        <div class="dot"></div>
-                        <div class="dot"></div>
-                        <div class="dot"></div>
-                    </div>
-                    <span>Processing query and analyzing SIEM data...</span>
-                `;
-                this.chatMessages.appendChild(processingDiv);
-                this.scrollToBottom();
-                return processingDiv;
-            }
-
-            generateResponse(query) {
-                const queryLower = query.toLowerCase();
-                let matchedResponse = null;
-                let matchedKey = '';
-
-                // Find best matching response
-                for (const [key, response] of Object.entries(this.responses)) {
-                    if (queryLower.includes(key)) {
-                        matchedResponse = response;
-                        matchedKey = key;
-                        break;
-                    }
-                }
-
-                // Default response if no match found
-                if (!matchedResponse) {
-                    return {
-                        content: `
-                            <strong>Query Analysis Complete</strong><br><br>
-                            I've analyzed your security query: "<em>${query}</em>"<br><br>
-                            While I don't have specific mock data for this exact query, in a production environment, I would:
-                            <br><br>
-                            <strong>Parse your natural language intent</strong><br>
-                            <strong>Generate optimized KQL/Elasticsearch DSL</strong><br>
-                            <strong>Query ISRO's SIEM systems</strong><br>
-                            <strong>Format results with visualizations</strong><br>
-                            <strong>Provide actionable insights</strong>
-                            <br><br>
-                            Try one of the example queries from the sidebar for a full demonstration!
-                        `,
-                        kql: `event.category:security AND @timestamp:[now-24h TO now] | sort @timestamp desc`,
-                        metadata: {
-                            results_count: 'N/A',
-                            processing_time: '1.2s',
-                            confidence: '85'
-                        },
-                        suggestions: ['Show failed login attempts from yesterday', 'Check satellite communication security', 'Generate security report']
-                    };
-                }
-
-                // Build comprehensive response
-                const insights = matchedResponse.insights.join('<br>');
-                const dataPreview = this.formatDataPreview(matchedResponse.data);
-
-                return {
-                    content: `
-                        <strong>Security Analysis Results</strong><br><br>
-                        <strong>Summary:</strong> ${matchedResponse.summary}<br><br>
-                        ${dataPreview}
-                        <br>
-                        <strong>Key Insights:</strong><br>
-                        ${insights}
-                    `,
-                    kql: matchedResponse.kql,
-                    metadata: {
-                        results_count: matchedResponse.data.length,
-                        processing_time: (Math.random() * 1.5 + 0.8).toFixed(1) + 's',
-                        confidence: Math.floor(Math.random() * 10 + 85)
-                    },
-                    suggestions: matchedResponse.suggestions
-                };
-            }
-
-            formatDataPreview(data) {
-                if (!data || data.length === 0) return '';
-
-                let preview = '<strong>Sample Results:</strong><br>';
-                data.slice(0, 2).forEach((item, index) => {
-                    preview += `<br><strong>Event ${index + 1}:</strong><br>`;
-                    Object.entries(item).slice(0, 4).forEach(([key, value]) => {
-                        preview += `• ${key.replace('_', ' ')}: ${value}<br>`;
-                    });
-                });
-
-                return preview;
-            }
-
-            delay(ms) {
-                return new Promise(resolve => setTimeout(resolve, ms));
-            }
-
-            scrollToBottom() {
-                this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+        function updateActiveFiltersDisplay() {
+            // Visual feedback for active filters
+            const activeCount = Object.keys(activeFilters).length;
+            if (activeCount > 0) {
+                document.querySelector('.sidebar-title').textContent = `🔧 Advanced Filters (${activeCount} active)`;
+            } else {
+                document.querySelector('.sidebar-title').textContent = '🔧 Advanced Filters';
             }
         }
 
-        // Initialize the demo when page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            new ISROSIEMDemo();
-        });
+        function toggleAdvancedMode() {
+            advancedMode = !advancedMode;
+            const button = document.querySelector('.advanced-button');
+            
+            if (advancedMode) {
+                button.textContent = 'Simple Mode';
+                button.style.background = 'var(--accent-color)';
+                button.style.color = 'white';
+                showAdvancedOptions();
+            } else {
+                button.textContent = 'Advanced Mode';
+                button.style.background = 'white';
+                button.style.color = 'var(--text-primary)';
+                hideAdvancedOptions();
+            }
+        }
+
+        function triggerAnalysis(analysisType) {
+            let query = '';
+            switch(analysisType) {
+                case 'anomaly':
+                    query = 'Perform anomaly detection analysis on recent security events and highlight unusual patterns';
+                    break;
+                case 'correlation':
+                    query = 'Analyze correlations between users, IPs, and events to identify potential attack chains';
+                    break;
+                case 'prediction':
+                    query = 'Generate threat predictions based on current security event trends and patterns';
+                    break;
+                case 'timeline':
+                    query = 'Create a detailed timeline analysis of security events with threat progression mapping';
+                    break;
+            }
+            
+            if (query) {
+                document.getElementById('chatInput').value = query;
+                sendMessage();
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const sendButton = document.getElementById('sendButton');
+            const query = input.value.trim();
+
+            if (!query) return;
+
+            // Add user message
+            addUserMessage(query);
+            
+            // Clear input and show loading
+            input.value = '';
+            input.style.height = 'auto';
+            sendButton.disabled = true;
+            sendButton.innerHTML = '<div class="loading-spinner"></div>';
+
+            try {
+                // Prepare request with filters
+                const requestData = {
+                    query: query,
+                    session_id: sessionId,
+                    filters: activeFilters,
+                    advanced_mode: advancedMode
+                };
+
+                const response = await fetch('/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    addAssistantMessage(data);
+                    updateConfidenceBar(data.confidence || 0.7);
+                } else {
+                    addErrorMessage(data.error || 'An error occurred processing your request');
+                }
+
+            } catch (error) {
+                console.error('Request error:', error);
+                addErrorMessage('Connection error. Please check your network and try again.');
+            } finally {
+                sendButton.disabled = false;
+                sendButton.innerHTML = 'Send Query';
+                focusInput();
+            }
+        }
+
+        function addUserMessage(text) {
+            const messagesContainer = document.getElementById('chatMessages');
+            removeWelcomeScreen();
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message user';
+            
+            messageDiv.innerHTML = `
+                <div class="message-bubble">
+                    <div class="message-meta">
+                        <span>You</span>
+                        <span>${getCurrentTime()}</span>
+                    </div>
+                    <div>${text}</div>
+                </div>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function addAssistantMessage(data) {
+            const messagesContainer = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant';
+            
+            const confidence = data.confidence || 0.7;
+            const confidenceClass = getConfidenceClass(confidence);
+            const confidenceText = `${(confidence * 100).toFixed(0)}% confidence`;
+            
+            messageDiv.innerHTML = `
+                <div class="message-bubble">
+                    <div class="message-meta">
+                        <span>SIEM Assistant</span>
+                        <span>${getCurrentTime()}</span>
+                        <span class="confidence-badge ${confidenceClass}">${confidenceText}</span>
+                    </div>
+                    <div class="message-content">
+                        <p>${data.response.text}</p>
+                        ${createResultsDisplay(data.response)}
+                        ${createVisualizationPanel(data.response)}
+                        ${createActionButtons(data)}
+                    </div>
+                </div>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            scrollToBottom();
+            
+            // Store in conversation history
+            conversationHistory.push({
+                query: data.parsed_data?.original_query,
+                response: data.response,
+                timestamp: Date.now()
+            });
+        }
+
+        function addErrorMessage(errorText) {
+            const messagesContainer = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant';
+            
+            messageDiv.innerHTML = `
+                <div class="message-bubble" style="border-left: 4px solid var(--danger-color);">
+                    <div class="message-meta">
+                        <span>System Error</span>
+                        <span>${getCurrentTime()}</span>
+                    </div>
+                    <div style="color: var(--danger-color);">
+                        <strong>Error:</strong> ${errorText}
+                    </div>
+                </div>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function createResultsDisplay(response) {
+            if (!response.results || response.results.length === 0) {
+                return '';
+            }
+
+            // Create statistics dashboard
+            let statsHtml = '';
+            if (response.statistics) {
+                statsHtml = createStatsDashboard(response.statistics);
+            }
+
+            // Create enhanced results table
+            const tableHtml = `
+                <div class="results-container">
+                    <table class="enhanced-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Event Type</th>
+                                <th>User</th>
+                                <th>Source IP</th>
+                                <th>Status</th>
+                                <th>Severity</th>
+                                <th>Host</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${response.results.slice(0, 15).map(result => `
+                                <tr>
+                                    <td>${formatTimestamp(result.timestamp)}</td>
+                                    <td>${result.event || result.category}</td>
+                                    <td>${result.user}</td>
+                                    <td>${result.source_ip}</td>
+                                    <td><span class="threat-indicator ${getThreatClass(result.outcome)}">${result.outcome}</span></td>
+                                    <td><span class="threat-indicator ${getSeverityClass(result.severity)}">${result.severity}</span></td>
+                                    <td>${result.host}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            return statsHtml + tableHtml;
+        }
+
+        function createStatsDashboard(statistics) {
+            const stats = [
+                { 
+                    value: Object.values(statistics.event_types || {}).reduce((a, b) => a + b, 0), 
+                    label: 'Total Events',
+                    trend: 'up'
+                },
+                { 
+                    value: Object.keys(statistics.users || {}).length, 
+                    label: 'Unique Users',
+                    trend: 'neutral'
+                },
+                { 
+                    value: Object.keys(statistics.source_ips || {}).length, 
+                    label: 'Source IPs',
+                    trend: 'down'
+                },
+                { 
+                    value: calculateThreatScore(statistics), 
+                    label: 'Threat Score',
+                    trend: getThreatTrend(statistics)
+                }
+            ];
+
+            return `
+                <div class="stats-dashboard">
+                    ${stats.map(stat => `
+                        <div class="stat-card">
+                            <div class="stat-value">${stat.value}</div>
+                            <div class="stat-label">${stat.label}</div>
+                            <div class="stat-trend trend-${stat.trend}">
+                                ${getTrendIcon(stat.trend)} ${getTrendText(stat.trend)}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function createVisualizationPanel(response) {
+            if (!response.statistics) {
+                return '';
+            }
+
+            return `
+                <div class="viz-panel">
+                    <div class="viz-tabs">
+                        <div class="viz-tab active" onclick="switchVizTab(this, 'overview')">Overview</div>
+                        <div class="viz-tab" onclick="switchVizTab(this, 'timeline')">Timeline</div>
+                        <div class="viz-tab" onclick="switchVizTab(this, 'geographic')">Geographic</div>
+                        <div class="viz-tab" onclick="switchVizTab(this, 'network')">Network</div>
+                    </div>
+                    <div class="viz-content" id="vizContent">
+                        <button class="advanced-button" onclick="generateVisualization('${JSON.stringify(response.statistics).replace(/"/g, '&quot;')}')">
+                            Generate Advanced Visualizations
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function createActionButtons(data) {
+            return `
+                <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="advanced-button" onclick="generateReport('${data.parsed_data?.original_query}')">
+                        Generate Full Report
+                    </button>
+                    <button class="advanced-button" onclick="exportResults('${JSON.stringify(data.response).replace(/"/g, '&quot;')}')">
+                        Export Data
+                    </button>
+                    <button class="advanced-button" onclick="saveToBookmarks('${data.parsed_data?.original_query}')">
+                        Bookmark Query
+                    </button>
+                    <button class="advanced-button" onclick="shareResults('${data.parsed_data?.original_query}')">
+                        Share Results
+                    </button>
+                </div>
+            `;
+        }
+
+        async function generateVisualization(statisticsJson) {
+            try {
+                const statistics = JSON.parse(statisticsJson.replace(/&quot;/g, '"'));
+                
+                const response = await fetch('/visualize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        statistics: statistics,
+                        results: {}
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.visualizations) {
+                    displayVisualizations(data.visualizations);
+                } else {
+                    console.error('Visualization generation failed:', data.error);
+                }
+
+            } catch (error) {
+                console.error('Visualization error:', error);
+            }
+        }
+
+        function displayVisualizations(visualizations) {
+            const vizContent = document.getElementById('vizContent');
+            
+            if (visualizations.threat_overview) {
+                vizContent.innerHTML = `<img src="${visualizations.threat_overview}" class="viz-image" alt="Threat Overview Visualization">`;
+            } else if (visualizations.timeline) {
+                vizContent.innerHTML = `<img src="${visualizations.timeline}" class="viz-image" alt="Timeline Visualization">`;
+            } else {
+                vizContent.innerHTML = '<p>Visualizations generated successfully. Check console for details.</p>';
+            }
+        }
+
+        async function generateReport(query) {
+            try {
+                const response = await fetch('/report', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        session_id: sessionId,
+                        report_type: 'comprehensive'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Display report in new message
+                    addReportMessage(data.report);
+                } else {
+                    addErrorMessage('Failed to generate report: ' + data.error);
+                }
+
+            } catch (error) {
+                console.error('Report generation error:', error);
+                addErrorMessage('Report generation failed due to network error');
+            }
+        }
+
+        function addReportMessage(report) {
+            const messagesContainer = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant';
+            
+            messageDiv.innerHTML = `
+                <div class="message-bubble">
+                    <div class="message-meta">
+                        <span>SIEM Report Generator</span>
+                        <span>${getCurrentTime()}</span>
+                        <span class="confidence-badge confidence-high">Report Generated</span>
+                    </div>
+                    <div class="message-content">
+                        <h3 style="color: var(--primary-color); margin-bottom: 15px;">Executive Security Report</h3>
+                        <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                            <h4>Executive Summary</h4>
+                            <p>${report.executive_summary}</p>
+                        </div>
+                        ${report.visualizations ? '<div><strong>Visualizations included in comprehensive analysis</strong></div>' : ''}
+                        <div style="margin-top: 15px;">
+                            <strong>Report Metadata:</strong><br>
+                            Generated: ${report.metadata?.generated_at}<br>
+                            Total Events Analyzed: ${report.metadata?.total_events?.toLocaleString()}<br>
+                            Confidence Score: ${((report.metadata?.confidence_score || 0.7) * 100).toFixed(0)}%
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function switchVizTab(tabElement, tabType) {
+            // Remove active class from all tabs
+            document.querySelectorAll('.viz-tab').forEach(tab => tab.classList.remove('active'));
+            
+            // Add active class to clicked tab
+            tabElement.classList.add('active');
+            
+            // Update visualization content based on tab
+            const vizContent = document.getElementById('vizContent');
+            
+            switch(tabType) {
+                case 'overview':
+                    vizContent.innerHTML = '<p>Overview visualization will be displayed here</p>';
+                    break;
+                case 'timeline':
+                    vizContent.innerHTML = '<p>Timeline visualization will be displayed here</p>';
+                    break;
+                case 'geographic':
+                    vizContent.innerHTML = '<p>Geographic distribution will be displayed here</p>';
+                    break;
+                case 'network':
+                    vizContent.innerHTML = '<p>Network topology will be displayed here</p>';
+                    break;
+            }
+        }
+
+        // Utility functions
+        function removeWelcomeScreen() {
+            const welcome = document.querySelector('.welcome-screen');
+            if (welcome) {
+                welcome.remove();
+            }
+        }
+
+        function scrollToBottom() {
+            const messagesContainer = document.getElementById('chatMessages');
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function getCurrentTime() {
+            return new Date().toLocaleTimeString('en-US', { 
+                hour12: false, 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+        }
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp || timestamp === 'N/A') return 'N/A';
+            const date = new Date(timestamp);
+            return date.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function getConfidenceClass(confidence) {
+            if (confidence > 0.8) return 'confidence-high';
+            if (confidence > 0.6) return 'confidence-medium';
+            return 'confidence-low';
+        }
+
+        function getThreatClass(outcome) {
+            switch(outcome) {
+                case 'failure': return 'threat-high';
+                case 'success': return 'threat-low';
+                default: return 'threat-medium';
+            }
+        }
+
+        function getSeverityClass(severity) {
+            switch(severity) {
+                case 'critical': return 'threat-high';
+                case 'high': return 'threat-high';
+                case 'medium': return 'threat-medium';
+                case 'low': return 'threat-low';
+                default: return 'threat-medium';
+            }
+        }
+
+        function updateConfidenceBar(confidence) {
+            const bar = document.getElementById('confidenceBar');
+            const text = document.getElementById('confidenceText');
+            
+            bar.style.width = (confidence * 100) + '%';
+            text.textContent = `${(confidence * 100).toFixed(0)}% Confidence`;
+        }
+
+        function calculateThreatScore(statistics) {
+            const failures = statistics.outcomes?.failure || 0;
+            const total = Object.values(statistics.outcomes || {}).reduce((a, b) => a + b, 1);
+            return Math.round((failures / total) * 100);
+        }
+
+        function getThreatTrend(statistics) {
+            const threatScore = calculateThreatScore(statistics);
+            return threatScore > 50 ? 'up' : threatScore < 20 ? 'down' : 'neutral';
+        }
+
+        function getTrendIcon(trend) {
+            switch(trend) {
+                case 'up': return '↗';
+                case 'down': return '↘';
+                default: return '→';
+            }
+        }
+
+        function getTrendText(trend) {
+            switch(trend) {
+                case 'up': return 'Increasing';
+                case 'down': return 'Decreasing';
+                default: return 'Stable';
+            }
+        }
+
+        // Placeholder functions for additional features
+        function exportResults(dataJson) {
+            console.log('Export functionality would be implemented here');
+        }
+
+        function saveToBookmarks(query) {
+            console.log('Bookmark functionality would be implemented here');
+        }
+
+        function shareResults(query) {
+            console.log('Share functionality would be implemented here');
+        }
+
+        function showAdvancedOptions() {
+            // Implementation for advanced mode UI changes
+            console.log('Advanced mode activated');
+        }
+
+        function hideAdvancedOptions() {
+            // Implementation for simple mode UI changes
+            console.log('Simple mode activated');
+        }
     </script>
 </body>
 </html>

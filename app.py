@@ -1,1516 +1,1457 @@
-"""
-Enhanced Conversational SIEM Assistant API
-ISRO Problem Statement #25173
-Advanced NLP-powered SIEM interaction with ISRO mission context
-"""
-
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from datetime import datetime, timedelta
+import os
 import json
 import re
-import uuid
-import logging
-from typing import Dict, List, Any, Optional
-import time
-import random
+from datetime import datetime, timedelta
+from flask import Flask, render_template, request, jsonify
+from elasticsearch import Elasticsearch
+import openai
+from dotenv import load_dotenv
+import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import seaborn as sns
+import io
+import base64
+from collections import defaultdict, Counter
+import PyPDF2
+import spacy
+from textblob import TextBlob
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import networkx as nx
+from wordcloud import WordCloud
+import plotly.graph_objs as go
+import plotly.express as px
+from plotly.utils import PlotlyJSONEncoder
+from fuzzywuzzy import fuzz, process
+
+load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Configuration
+ELASTICSEARCH_HOST = os.getenv('ELASTICSEARCH_HOST', 'http://localhost:9200')
+ELASTICSEARCH_USER = os.getenv('ELASTICSEARCH_USER', 'elastic')
+ELASTICSEARCH_PASSWORD = os.getenv('ELASTICSEARCH_PASSWORD', '')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+openai.api_key = OPENAI_API_KEY
 
-class ISRONLPProcessor:
-    """Advanced Natural Language Processor for ISRO SIEM queries"""
+# Initialize spaCy model
+try:
+    nlp = spacy.load("en_core_web_sm")
+except IOError:
+    print("spaCy model not found. Installing...")
+    os.system("python -m spacy download en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm")
+
+# Initialize Elasticsearch client
+try:
+    es = Elasticsearch(
+        [ELASTICSEARCH_HOST],
+        basic_auth=(ELASTICSEARCH_USER, ELASTICSEARCH_PASSWORD),
+        verify_certs=False,
+        ssl_show_warn=False
+    )
+except Exception as e:
+    print(f"Elasticsearch connection error: {e}")
+    es = None
+
+# Enhanced SIEM schema with dataset knowledge
+SIEM_SCHEMA = {
+    "fields": {
+        "user": ["user.name", "source.user.name", "user.id", "user.email", "actor.user.name"],
+        "ip": ["source.ip", "destination.ip", "client.ip", "server.ip", "network.forwarded_ip"],
+        "event": ["event.action", "event.type", "event.category", "event.outcome", "event.kind"],
+        "timestamp": ["@timestamp", "event.created", "event.start", "event.end"],
+        "host": ["host.name", "host.hostname", "agent.hostname", "host.ip"],
+        "process": ["process.name", "process.executable", "process.pid", "process.command_line"],
+        "file": ["file.name", "file.path", "file.hash.sha256", "file.extension", "file.size"],
+        "network": ["network.protocol", "network.transport", "network.bytes", "network.packets"],
+        "authentication": ["event.category:authentication", "event.outcome", "auth.method"],
+        "malware": ["event.category:malware", "threat.indicator.type", "threat.tactic.name"],
+        "vpn": ["network.type:vpn", "event.action:vpn", "vpn.connection_id"],
+        "mfa": ["event.action:mfa", "authentication.method:mfa", "auth.factor"],
+        "geolocation": ["source.geo.country_name", "source.geo.city_name", "destination.geo.country_name"],
+        "url": ["url.full", "url.domain", "url.path", "http.request.method"],
+        "dns": ["dns.question.name", "dns.question.type", "dns.response_code"],
+        "certificate": ["tls.server.certificate.fingerprint", "tls.version", "tls.cipher"]
+    },
+    "event_types": {
+        "login": ["authentication", "logon", "sign-in", "login", "user_login"],
+        "failed_login": ["authentication_failure", "logon_failure", "failed", "login_failed"],
+        "malware": ["malware", "virus", "trojan", "ransomware", "threat_detected"],
+        "network": ["connection", "traffic", "packet", "network_connection"],
+        "file_access": ["file_access", "file_read", "file_write", "file_created"],
+        "process": ["process_creation", "process_start", "execution", "process_terminated"],
+        "dns_query": ["dns_request", "dns_query", "name_resolution"],
+        "web_request": ["http_request", "web_access", "url_access"],
+        "vpn_connection": ["vpn_connect", "vpn_disconnect", "vpn_session"],
+        "data_exfiltration": ["data_transfer", "large_upload", "suspicious_download"],
+        "privilege_escalation": ["admin_access", "sudo", "elevated_privileges"],
+        "lateral_movement": ["remote_login", "psexec", "wmi_execution"],
+        "reconnaissance": ["port_scan", "network_discovery", "enumeration"]
+    },
+    "threat_indicators": {
+        "suspicious_ips": ["known_bad_ip", "tor_exit_node", "malicious_ip"],
+        "suspicious_domains": ["malware_c2", "phishing_domain", "suspicious_tld"],
+        "attack_patterns": ["brute_force", "credential_stuffing", "sql_injection"],
+        "anomalies": ["unusual_time", "unusual_location", "unusual_volume"]
+    }
+}
+
+class AdvancedNLPParser:
+    """Advanced NLP parser with machine learning capabilities"""
     
     def __init__(self):
-        # Enhanced entity mappings with ISRO context
-        self.entity_mappings = {
-            # Authentication & Access Control
-            'failed login': {
-                'kql': 'event.outcome:failure AND event.category:authentication',
-                'category': 'authentication',
-                'priority': 'HIGH',
-                'description': 'Failed authentication attempts'
-            },
-            'privileged access': {
-                'kql': 'user.roles:(admin OR root OR mission_controller OR satellite_operator)',
-                'category': 'privilege_escalation',
-                'priority': 'CRITICAL',
-                'description': 'Privileged account activities'
-            },
-            'suspicious login': {
-                'kql': 'event.action:login AND event.risk_score:[70 TO *]',
-                'category': 'suspicious_activity',
-                'priority': 'HIGH',
-                'description': 'Suspicious authentication patterns'
-            },
-            
-            # Network & Communication Security
-            'network anomaly': {
-                'kql': 'event.category:network AND event.risk_score:[80 TO *]',
-                'category': 'network_security',
-                'priority': 'HIGH',
-                'description': 'Network traffic anomalies'
-            },
-            'satellite communication': {
-                'kql': 'service.name:satellite_comm OR tags:satellite_comms',
-                'category': 'space_communications',
-                'priority': 'CRITICAL',
-                'description': 'Satellite communication systems'
-            },
-            'ground station': {
-                'kql': 'tags:ground_station OR host.name:*-station-* OR location.facility:(VSSC OR SHAR OR ISTRAC OR NRSC)',
-                'category': 'infrastructure',
-                'priority': 'HIGH',
-                'description': 'Ground station infrastructure'
-            },
-            
-            # Threat Detection
-            'malware': {
-                'kql': 'event.category:malware OR threat.indicator.type:malware',
-                'category': 'malware',
-                'priority': 'CRITICAL',
-                'description': 'Malware detection events'
-            },
-            'ransomware': {
-                'kql': 'malware.name:ransomware OR threat.tactic:impact',
-                'category': 'ransomware',
-                'priority': 'CRITICAL',
-                'description': 'Ransomware activity detection'
-            },
-            'apt': {
-                'kql': 'threat.group.name:* AND threat.tactic:* AND tags:advanced_persistent_threat',
-                'category': 'advanced_threats',
-                'priority': 'CRITICAL',
-                'description': 'Advanced Persistent Threat indicators'
-            },
-            
-            # ISRO Mission-Specific
-            'chandrayaan': {
-                'kql': 'tags:chandrayaan OR mission.name:chandrayaan* OR project.lunar_mission:*',
-                'category': 'lunar_mission',
-                'priority': 'CRITICAL',
-                'description': 'Chandrayaan lunar mission systems'
-            },
-            'aditya': {
-                'kql': 'tags:aditya OR mission.name:aditya* OR project.solar_mission:*',
-                'category': 'solar_mission',
-                'priority': 'CRITICAL',
-                'description': 'Aditya-L1 solar observatory mission'
-            },
-            'gaganyaan': {
-                'kql': 'tags:gaganyaan OR mission.name:gaganyaan* OR project.human_spaceflight:*',
-                'category': 'human_spaceflight',
-                'priority': 'CRITICAL',
-                'description': 'Gaganyaan human spaceflight program'
-            },
-            'mission control': {
-                'kql': 'host.name:*mission-control* OR tags:mission_control OR facility:mission_operations',
-                'category': 'mission_operations',
-                'priority': 'CRITICAL',
-                'description': 'Mission control systems'
-            },
-            'launch': {
-                'kql': 'event.category:launch_operations OR tags:launch OR phase:launch_window',
-                'category': 'launch_operations',
-                'priority': 'CRITICAL',
-                'description': 'Launch operations and systems'
-            }
+        self.time_patterns = {
+            'now': 0,
+            'today': 0,
+            'yesterday': 1,
+            'last week': 7,
+            'past week': 7,
+            'last month': 30,
+            'past month': 30,
+            'last hour': 0.042,
+            'past hour': 0.042,
+            'last 24 hours': 1,
+            'past 24 hours': 1,
+            'this week': 7,
+            'this month': 30
         }
         
-        # Enhanced time mappings with mission-specific contexts
-        self.time_mappings = {
-            'today': '@timestamp:[now/d TO now]',
-            'yesterday': '@timestamp:[now-1d/d TO now-1d/d+1d]',
-            'last week': '@timestamp:[now-7d TO now]',
-            'last month': '@timestamp:[now-30d TO now]',
-            'last hour': '@timestamp:[now-1h TO now]',
-            'last 24 hours': '@timestamp:[now-24h TO now]',
-            'during launch': '@timestamp:[now-4h TO now+2h] AND tags:launch_window',
-            'mission phase': '@timestamp:[now-12h TO now] AND mission.phase:*',
-            'orbit insertion': '@timestamp:[now-6h TO now+2h] AND mission.phase:orbit_insertion',
-            'critical phase': '@timestamp:[now-2h TO now] AND mission.criticality:high'
+        self.intent_keywords = {
+            'search': ['show', 'list', 'find', 'get', 'display', 'search', 'lookup', 'retrieve'],
+            'aggregate': ['count', 'how many', 'number of', 'total', 'sum', 'average', 'statistics'],
+            'report': ['report', 'summary', 'analyze', 'analysis', 'overview', 'breakdown'],
+            'visualize': ['chart', 'graph', 'visualize', 'plot', 'dashboard', 'timeline'],
+            'filter': ['filter', 'only', 'exclude', 'where', 'matching', 'containing'],
+            'compare': ['compare', 'versus', 'vs', 'difference', 'correlation'],
+            'trend': ['trend', 'pattern', 'over time', 'timeline', 'historical'],
+            'anomaly': ['anomaly', 'unusual', 'suspicious', 'abnormal', 'outlier']
         }
         
-        # Mission-specific contexts
-        self.mission_contexts = {
-            'chandrayaan': {
-                'filters': 'mission.name:chandrayaan* OR tags:lunar_mission',
-                'priority_systems': ['lunar_orbiter', 'ground_station_byalalu', 'mission_control_bangalore', 'deep_space_network'],
-                'critical_phases': ['trans_lunar_injection', 'lunar_orbit_insertion', 'powered_descent', 'landing'],
-                'ground_stations': ['IDSN_Byalalu', 'IDSN_Bangalore', 'DSN_Madrid', 'DSN_Goldstone']
-            },
-            'aditya': {
-                'filters': 'mission.name:aditya* OR tags:solar_mission',
-                'priority_systems': ['l1_spacecraft', 'deep_space_network', 'mission_control_bangalore', 'payload_operations'],
-                'critical_phases': ['l1_transfer', 'halo_orbit_insertion', 'payload_commissioning'],
-                'ground_stations': ['IDSN_Byalalu', 'IDSN_Bangalore', 'Goldstone_DSN', 'Madrid_DSN']
-            },
-            'gaganyaan': {
-                'filters': 'mission.name:gaganyaan* OR tags:human_spaceflight',
-                'priority_systems': ['crew_module', 'life_support_system', 'mission_control_shar', 'recovery_systems'],
-                'critical_phases': ['launch', 'orbital_insertion', 'docking', 'reentry', 'recovery'],
-                'ground_stations': ['SHAR_Sriharikota', 'Mission_Control_SHAR', 'Recovery_Control_Center']
-            },
-            'navigation': {
-                'filters': 'mission.name:navic* OR tags:navigation_system',
-                'priority_systems': ['navigation_satellites', 'ground_control_segment', 'user_segment'],
-                'critical_phases': ['constellation_maintenance', 'time_synchronization', 'signal_monitoring'],
-                'ground_stations': ['MCF_Hassan', 'MCF_Bhopal', 'TTC_Stations']
-            }
-        }
+        # Initialize TF-IDF vectorizer for semantic similarity
+        self.vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
         
-        # Intent classification patterns
-        self.intent_patterns = {
-            'search': ['show', 'list', 'find', 'get', 'display', 'what', 'which'],
-            'analyze': ['analyze', 'investigate', 'examine', 'study', 'review'],
-            'report': ['generate', 'create', 'make', 'produce', 'compile', 'report'],
-            'monitor': ['monitor', 'watch', 'track', 'observe', 'check'],
-            'alert': ['alert', 'notify', 'warn', 'inform', 'escalate']
+        # Load dataset knowledge
+        self.dataset_knowledge = self._load_dataset_knowledge()
+    
+    def _load_dataset_knowledge(self):
+        """Load knowledge from the dataset PDF"""
+        knowledge = {
+            "common_fields": [
+                "timestamp", "user_id", "source_ip", "destination_ip", "event_type",
+                "severity", "status", "protocol", "port", "bytes_in", "bytes_out",
+                "user_agent", "http_method", "response_code", "file_name", "file_hash"
+            ],
+            "security_events": [
+                "failed_authentication", "successful_login", "malware_detection",
+                "network_intrusion", "data_exfiltration", "privilege_escalation",
+                "lateral_movement", "reconnaissance", "command_execution"
+            ],
+            "threat_actors": [
+                "external_attacker", "insider_threat", "automated_bot", "apt_group"
+            ]
         }
-
-    def parse_query(self, query: str, context: Dict = None) -> Dict[str, Any]:
-        """Parse natural language query with enhanced ISRO context"""
-        start_time = time.time()
+        return knowledge
+    
+    def parse_query(self, query, context=None):
+        """Enhanced query parsing with NLP techniques"""
+        query_lower = query.lower()
         
-        analysis = {
+        # Use spaCy for advanced NLP processing
+        doc = nlp(query)
+        
+        # Extract entities using spaCy NER
+        entities = self._extract_entities_advanced(doc, query_lower)
+        
+        # Determine intent using multiple methods
+        intent = self._extract_intent_advanced(doc, query_lower)
+        
+        # Extract time range with better parsing
+        time_range = self._extract_time_range_advanced(doc, query_lower)
+        
+        # Extract filters and conditions
+        filters = self._extract_filters_advanced(doc, query_lower, context)
+        
+        # Extract comparison and trend analysis requirements
+        analysis_type = self._extract_analysis_type(doc, query_lower)
+        
+        # Semantic similarity matching for field mapping
+        field_mappings = self._semantic_field_mapping(query_lower)
+        
+        return {
+            'intent': intent,
+            'entities': entities,
+            'time_range': time_range,
+            'filters': filters,
+            'analysis_type': analysis_type,
+            'field_mappings': field_mappings,
             'original_query': query,
-            'intent': self._detect_intent(query),
-            'entities': self._extract_entities(query),
-            'time_range': self._extract_time_range(query),
-            'mission_context': self._extract_mission_context(query, context),
-            'priority': self._assess_priority(query),
-            'confidence': self._calculate_confidence(query),
-            'processing_time': 0,
-            'suggestions': []
+            'confidence': self._calculate_confidence(doc, entities, intent)
+        }
+    
+    def _extract_entities_advanced(self, doc, query):
+        """Advanced entity extraction using spaCy and custom patterns"""
+        entities = {}
+        
+        # Use spaCy NER
+        for ent in doc.ents:
+            if ent.label_ == "PERSON":
+                entities['user'] = ent.text
+            elif ent.label_ in ["ORG", "GPE"]:
+                entities['organization'] = ent.text
+            elif ent.label_ == "DATE":
+                entities['date_mention'] = ent.text
+        
+        # Enhanced pattern matching
+        patterns = {
+            'ip': r'\b(?:\d{1,3}\.){3}\d{1,3}\b',
+            'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+            'hash': r'\b[a-fA-F0-9]{32,64}\b',
+            'domain': r'\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b',
+            'port': r'\bport\s+(\d{1,5})\b',
+            'process': r'\b(?:process|executable)\s+([a-zA-Z0-9_.-]+\.exe|[a-zA-Z0-9_.-]+)\b'
         }
         
-        # Build KQL query
-        analysis['kql_query'] = self._build_advanced_kql(analysis)
-        analysis['elasticsearch_dsl'] = self._build_elasticsearch_dsl(analysis)
-        analysis['explanation'] = self._generate_explanation(analysis)
-        analysis['follow_up_suggestions'] = self._generate_follow_ups(analysis, context)
+        for entity_type, pattern in patterns.items():
+            matches = re.findall(pattern, query, re.IGNORECASE)
+            if matches:
+                entities[entity_type] = matches
         
-        analysis['processing_time'] = round(time.time() - start_time, 3)
+        # Fuzzy matching for event types
+        event_matches = []
+        for event_type, keywords in SIEM_SCHEMA['event_types'].items():
+            for keyword in keywords:
+                if fuzz.partial_ratio(keyword, query) > 80:
+                    event_matches.append((event_type, keyword))
         
-        return analysis
-
-    def _detect_intent(self, query: str) -> str:
-        """Enhanced intent detection with confidence scoring"""
-        query_lower = query.lower()
-        intent_scores = {}
-        
-        for intent, patterns in self.intent_patterns.items():
-            score = sum(1 for pattern in patterns if pattern in query_lower)
-            if score > 0:
-                intent_scores[intent] = score
-        
-        if not intent_scores:
-            return 'search'  # Default intent
-        
-        return max(intent_scores.items(), key=lambda x: x[1])[0]
-
-    def _extract_entities(self, query: str) -> List[Dict]:
-        """Extract entities with relevance scoring"""
-        entities = []
-        query_lower = query.lower()
-        
-        for entity_term, mapping in self.entity_mappings.items():
-            if entity_term in query_lower:
-                # Calculate relevance based on context
-                relevance = self._calculate_entity_relevance(entity_term, query_lower)
-                
-                entities.append({
-                    'term': entity_term,
-                    'kql': mapping['kql'],
-                    'category': mapping['category'],
-                    'priority': mapping['priority'],
-                    'description': mapping['description'],
-                    'relevance': relevance
-                })
-        
-        # Sort by relevance
-        entities.sort(key=lambda x: x['relevance'], reverse=True)
+        if event_matches:
+            best_match = max(event_matches, key=lambda x: fuzz.partial_ratio(x[1], query))
+            entities['event_type'] = best_match[0]
         
         return entities
-
-    def _calculate_entity_relevance(self, entity: str, query: str) -> float:
-        """Calculate entity relevance score"""
-        base_score = 1.0
+    
+    def _extract_intent_advanced(self, doc, query):
+        """Advanced intent classification"""
+        intent_scores = {}
         
-        # Boost score for exact matches
-        if entity in query:
-            base_score += 0.5
+        # Keyword-based scoring
+        for intent, keywords in self.intent_keywords.items():
+            score = sum(1 for keyword in keywords if keyword in query)
+            intent_scores[intent] = score
         
-        # Boost for ISRO-specific terms
-        isro_terms = ['satellite', 'mission', 'launch', 'space', 'chandrayaan', 'aditya', 'gaganyaan']
-        if any(term in entity for term in isro_terms):
-            base_score += 0.3
+        # Linguistic pattern analysis
+        if any(token.pos_ == "VERB" and token.lemma_ in ["show", "display", "list"] for token in doc):
+            intent_scores['search'] = intent_scores.get('search', 0) + 2
         
-        # Boost for security-critical terms
-        critical_terms = ['failed', 'malware', 'intrusion', 'breach', 'unauthorized']
-        if any(term in entity for term in critical_terms):
-            base_score += 0.2
+        if any(token.text.lower() in ["how", "many", "count", "number"] for token in doc):
+            intent_scores['aggregate'] = intent_scores.get('aggregate', 0) + 2
         
-        return base_score
-
-    def _extract_mission_context(self, query: str, context: Dict = None) -> Optional[Dict]:
-        """Extract mission-specific context"""
-        query_lower = query.lower()
+        if any(token.text.lower() in ["chart", "graph", "visual"] for token in doc):
+            intent_scores['visualize'] = intent_scores.get('visualize', 0) + 2
         
-        # Check for explicit mission mentions
-        for mission, mission_data in self.mission_contexts.items():
-            if mission in query_lower:
-                return {'mission': mission, **mission_data}
+        # Return highest scoring intent or default to search
+        return max(intent_scores.items(), key=lambda x: x[1])[0] if intent_scores else 'search'
+    
+    def _extract_time_range_advanced(self, doc, query):
+        """Advanced time range extraction"""
+        # Check for relative time expressions
+        for pattern, days in self.time_patterns.items():
+            if pattern in query:
+                if days < 1:
+                    hours = int(days * 24)
+                    return {'value': hours, 'unit': 'hours', 'type': 'relative'}
+                return {'value': int(days), 'unit': 'days', 'type': 'relative'}
         
-        # Check current context if provided
-        if context and context.get('current_mission') != 'general':
-            mission = context.get('current_mission')
-            if mission in self.mission_contexts:
-                return {'mission': mission, **self.mission_contexts[mission]}
+        # Extract specific numbers with units
+        number_pattern = r'(?:past|last|previous)\s+(\d+)\s+(second|seconds|minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)'
+        match = re.search(number_pattern, query)
+        if match:
+            value = int(match.group(1))
+            unit = match.group(2).rstrip('s')
+            return {'value': value, 'unit': unit, 'type': 'relative'}
         
-        return None
-
-    def _assess_priority(self, query: str) -> str:
-        """Assess query priority based on content"""
-        query_lower = query.lower()
+        # Check for absolute dates using spaCy
+        for ent in doc.ents:
+            if ent.label_ == "DATE":
+                return {'value': ent.text, 'unit': 'absolute', 'type': 'absolute'}
         
-        critical_keywords = ['critical', 'emergency', 'breach', 'attack', 'compromise', 'failure', 'down', 'offline']
-        high_keywords = ['suspicious', 'anomaly', 'unusual', 'unauthorized', 'escalation', 'alert']
+        return {'value': 24, 'unit': 'hours', 'type': 'default'}
+    
+    def _extract_filters_advanced(self, doc, query, context):
+        """Advanced filter extraction"""
+        filters = {}
         
-        if any(keyword in query_lower for keyword in critical_keywords):
-            return 'CRITICAL'
-        elif any(keyword in query_lower for keyword in high_keywords):
-            return 'HIGH'
-        else:
-            return 'MEDIUM'
-
-    def _calculate_confidence(self, query: str) -> float:
-        """Calculate parsing confidence"""
-        confidence_factors = []
+        # Status filters
+        if any(word in query for word in ['failed', 'failure', 'unsuccessful', 'denied']):
+            filters['outcome'] = 'failure'
+        elif any(word in query for word in ['successful', 'success', 'allowed', 'accepted']):
+            filters['outcome'] = 'success'
         
-        # Length factor
-        word_count = len(query.split())
-        if 3 <= word_count <= 15:
-            confidence_factors.append(0.8)
-        else:
-            confidence_factors.append(0.5)
+        # Security-specific filters
+        if 'vpn' in query:
+            filters['vpn'] = True
+        if any(term in query for term in ['mfa', 'multi-factor', 'two-factor', '2fa']):
+            filters['mfa'] = True
+        if any(term in query for term in ['suspicious', 'anomalous', 'unusual', 'abnormal']):
+            filters['suspicious'] = True
+        if any(term in query for term in ['malware', 'virus', 'trojan', 'ransomware']):
+            filters['malware'] = True
+        if any(term in query for term in ['brute force', 'bruteforce', 'password attack']):
+            filters['attack_type'] = 'brute_force'
         
-        # Entity detection factor
-        entities_found = sum(1 for entity in self.entity_mappings.keys() if entity in query.lower())
-        confidence_factors.append(min(entities_found * 0.2, 0.9))
+        # Severity filters
+        severity_terms = ['low', 'medium', 'high', 'critical']
+        for severity in severity_terms:
+            if severity in query:
+                filters['severity'] = severity
+                break
         
-        # Time reference factor
-        time_refs = sum(1 for time_ref in self.time_mappings.keys() if time_ref in query.lower())
-        if time_refs > 0:
-            confidence_factors.append(0.8)
-        else:
-            confidence_factors.append(0.6)
+        return filters
+    
+    def _extract_analysis_type(self, doc, query):
+        """Extract the type of analysis required"""
+        analysis_types = []
         
-        return round(sum(confidence_factors) / len(confidence_factors), 2)
-
-    def _build_advanced_kql(self, analysis: Dict) -> str:
-        """Build advanced KQL query with optimization"""
-        query_parts = []
+        if any(word in query for word in ['compare', 'comparison', 'versus', 'vs']):
+            analysis_types.append('comparison')
+        if any(word in query for word in ['trend', 'pattern', 'over time', 'timeline']):
+            analysis_types.append('trend')
+        if any(word in query for word in ['correlation', 'relationship', 'connected']):
+            analysis_types.append('correlation')
+        if any(word in query for word in ['anomaly', 'outlier', 'unusual', 'abnormal']):
+            analysis_types.append('anomaly_detection')
+        if any(word in query for word in ['forecast', 'predict', 'projection']):
+            analysis_types.append('prediction')
         
-        # Add entity filters with proper grouping
-        if analysis['entities']:
-            entity_queries = []
-            for entity in analysis['entities'][:3]:  # Limit to top 3 entities
-                entity_queries.append(f"({entity['kql']})")
-            query_parts.append(f"({' OR '.join(entity_queries)})")
+        return analysis_types
+    
+    def _semantic_field_mapping(self, query):
+        """Map query terms to database fields using semantic similarity"""
+        field_mappings = {}
         
-        # Add time range filter
-        if analysis['time_range']:
-            query_parts.append(analysis['time_range']['kql'])
-        
-        # Add mission context filter
-        if analysis['mission_context']:
-            query_parts.append(f"({analysis['mission_context']['filters']})")
-        
-        # Add priority filter for critical queries
-        if analysis['priority'] == 'CRITICAL':
-            query_parts.append("event.risk_score:[80 TO *]")
-        
-        final_query = ' AND '.join(query_parts) if query_parts else '*'
-        
-        # Add optimization hints
-        if analysis['intent'] == 'search':
-            final_query += " | sort @timestamp desc | limit 100"
-        elif analysis['intent'] == 'analyze':
-            final_query += " | stats count() by source.ip, user.name | sort count desc"
-        
-        return final_query
-
-    def _build_elasticsearch_dsl(self, analysis: Dict) -> Dict:
-        """Build Elasticsearch DSL query"""
-        query_dsl = {
-            "query": {
-                "bool": {
-                    "must": [],
-                    "filter": []
-                }
-            },
-            "sort": [{"@timestamp": {"order": "desc"}}],
-            "size": 100
+        # Common field aliases
+        field_aliases = {
+            'user': ['username', 'userid', 'account', 'login'],
+            'ip': ['address', 'source', 'destination', 'client'],
+            'time': ['when', 'date', 'timestamp', 'occurred'],
+            'event': ['action', 'activity', 'incident', 'occurrence'],
+            'host': ['server', 'machine', 'computer', 'system'],
+            'file': ['document', 'attachment', 'executable', 'script']
         }
         
-        # Add entity queries
-        for entity in analysis['entities'][:3]:
-            query_dsl["query"]["bool"]["must"].append({
-                "query_string": {"query": entity['kql']}
-            })
+        for field, aliases in field_aliases.items():
+            for alias in aliases:
+                if alias in query:
+                    field_mappings[alias] = field
         
-        # Add time range
-        if analysis['time_range']:
-            time_filter = self._convert_kql_time_to_es(analysis['time_range']['kql'])
-            if time_filter:
-                query_dsl["query"]["bool"]["filter"].append(time_filter)
+        return field_mappings
+    
+    def _calculate_confidence(self, doc, entities, intent):
+        """Calculate confidence score for the parsing"""
+        confidence = 0.5  # Base confidence
         
-        # Add mission context
-        if analysis['mission_context']:
-            query_dsl["query"]["bool"]["filter"].append({
-                "query_string": {"query": analysis['mission_context']['filters']}
-            })
+        # Boost confidence based on entities found
+        confidence += min(len(entities) * 0.1, 0.3)
         
-        return query_dsl
+        # Boost confidence based on clear intent indicators
+        if any(token.pos_ in ['VERB', 'NOUN'] for token in doc):
+            confidence += 0.1
+        
+        # Reduce confidence for very short queries
+        if len(doc) < 3:
+            confidence -= 0.2
+        
+        return min(max(confidence, 0.0), 1.0)
 
-    def _convert_kql_time_to_es(self, kql_time: str) -> Optional[Dict]:
-        """Convert KQL time range to Elasticsearch format"""
-        # Simple conversion for demo - would need more sophisticated parsing in production
-        return {
-            "range": {
-                "@timestamp": {
-                    "gte": "now-24h",
-                    "lte": "now"
-                }
+class EnhancedQueryGenerator:
+    """Enhanced query generator with optimizations"""
+    
+    def __init__(self, schema):
+        self.schema = schema
+    
+    def generate_query(self, parsed_data):
+        """Generate optimized Elasticsearch DSL query"""
+        intent = parsed_data['intent']
+        entities = parsed_data['entities']
+        time_range = parsed_data['time_range']
+        filters = parsed_data['filters']
+        analysis_type = parsed_data.get('analysis_type', [])
+        
+        # Build base query with performance optimizations
+        query = {
+            "bool": {
+                "must": [],
+                "filter": [],
+                "should": [],
+                "must_not": []
             }
         }
-
-    def _generate_explanation(self, analysis: Dict) -> str:
-        """Generate human-readable explanation of the query"""
-        explanation = f"Analyzing "
         
-        if analysis['entities']:
-            entity_names = [entity['term'] for entity in analysis['entities'][:2]]
-            explanation += f"{' and '.join(entity_names)} events"
-        else:
-            explanation += "security events"
+        # Add time range filter (always first for performance)
+        time_filter = self._build_time_filter(time_range)
+        query["bool"]["filter"].append(time_filter)
         
-        if analysis['time_range']:
-            explanation += f" from {analysis['time_range']['phrase']}"
+        # Add entity-based filters
+        self._add_entity_filters(query, entities)
         
-        if analysis['mission_context']:
-            explanation += f" in the context of {analysis['mission_context']['mission']} mission"
+        # Add additional filters
+        self._add_additional_filters(query, filters)
         
-        explanation += f". Query priority: {analysis['priority']}, Confidence: {analysis['confidence']*100:.0f}%"
-        
-        return explanation
-
-    def _generate_follow_ups(self, analysis: Dict, context: Dict = None) -> List[str]:
-        """Generate contextual follow-up suggestions"""
-        suggestions = []
-        
-        # Intent-based suggestions
-        if analysis['intent'] == 'search':
-            suggestions.extend([
-                "Generate detailed report from these results",
-                "Show timeline visualization",
-                "Filter by severity level"
-            ])
-        elif analysis['intent'] == 'analyze':
-            suggestions.extend([
-                "Create correlation analysis",
-                "Generate threat assessment",
-                "Export analysis results"
-            ])
-        
-        # Entity-based suggestions
-        if any(entity['category'] == 'authentication' for entity in analysis['entities']):
-            suggestions.append("Analyze user behavior patterns")
-            suggestions.append("Check source IP geolocation")
-        
-        if any(entity['category'] in ['malware', 'ransomware'] for entity in analysis['entities']):
-            suggestions.append("Generate threat intelligence report")
-            suggestions.append("Check for lateral movement indicators")
-        
-        # Mission-specific suggestions
-        if analysis['mission_context']:
-            mission = analysis['mission_context']['mission']
-            suggestions.append(f"Show {mission} mission timeline")
-            suggestions.append("Monitor critical system status")
-        
-        return suggestions[:4]  # Limit to 4 suggestions
-
-
-class ISROSIEMConnector:
-    """Enhanced SIEM connector with ISRO-specific data simulation"""
-    
-    def __init__(self):
-        self.mock_data = self._initialize_mock_data()
-        self.connection_status = {
-            'elastic': True,
-            'wazuh': True,
-            'last_check': datetime.now()
+        # Build the complete query structure
+        es_query = {
+            "query": query,
+            "size": 1000 if intent == 'search' else 0,
+            "sort": [{"@timestamp": {"order": "desc"}}],
+            "_source": ["@timestamp", "event.*", "user.*", "source.*", "destination.*", "host.*"]
         }
-
-    def _initialize_mock_data(self) -> Dict:
-        """Initialize comprehensive ISRO SIEM mock data"""
-        return {
-            'ground_station_security': [
-                {
-                    '@timestamp': '2025-01-15T14:23:45Z',
-                    'event.category': 'authentication',
-                    'event.outcome': 'failure',
-                    'event.risk_score': 85,
-                    'user.name': 'mission_controller_lead',
-                    'source.ip': '203.192.45.123',
-                    'destination.ip': '10.15.45.89',
-                    'tags': ['ground_station', 'vssc_thumba'],
-                    'location.facility': 'VSSC',
-                    'mission.name': 'chandrayaan-3',
-                    'system.name': 'ground_control_system',
-                    'attempts': 15,
-                    'geo.country': 'India',
-                    'event.severity': 'high'
-                },
-                {
-                    '@timestamp': '2025-01-15T15:45:22Z',
-                    'event.category': 'authentication',
-                    'event.outcome': 'success',
-                    'event.risk_score': 95,
-                    'user.name': 'satellite_operator',
-                    'source.ip': '10.0.15.89',
-                    'tags': ['privilege_escalation', 'shar_sriharikota'],
-                    'location.facility': 'SHAR',
-                    'mission.name': 'aditya-l1',
-                    'system.name': 'mission_control_system',
-                    'user.roles': ['satellite_operator', 'elevated_access'],
-                    'event.severity': 'critical'
+        
+        # Add aggregations based on intent and analysis type
+        if intent in ['aggregate', 'visualize', 'report'] or analysis_type:
+            es_query['aggs'] = self._build_comprehensive_aggregations(entities, analysis_type)
+        
+        return es_query
+    
+    def _build_time_filter(self, time_range):
+        """Build optimized time range filter"""
+        if time_range['type'] == 'absolute':
+            # Handle absolute dates
+            return {
+                "range": {
+                    "@timestamp": {
+                        "gte": time_range['value'],
+                        "lte": "now"
+                    }
                 }
-            ],
+            }
+        else:
+            # Handle relative dates
+            unit = time_range['unit']
+            value = time_range['value']
             
-            'mission_critical_events': [
-                {
-                    '@timestamp': '2025-01-15T16:12:33Z',
-                    'mission.name': 'chandrayaan-3',
-                    'mission.phase': 'lunar_orbit_insertion',
-                    'event.category': 'communication',
-                    'event.type': 'anomaly',
-                    'service.name': 'satellite_comm',
-                    'communication.type': 'telemetry',
-                    'duration': '4m 32s',
-                    'impact': 'temporary_telemetry_loss',
-                    'status': 'resolved',
-                    'ground_station': 'IDSN_Byalalu',
-                    'satellite.id': 'CH3-ORB-001',
-                    'frequency': '2.2_GHz',
-                    'signal_strength': 'weak',
-                    'event.severity': 'high'
-                },
-                {
-                    '@timestamp': '2025-01-15T17:30:11Z',
-                    'mission.name': 'aditya-l1',
-                    'mission.phase': 'l1_transit',
-                    'event.category': 'network',
-                    'event.type': 'intrusion_attempt',
-                    'source.ip': '185.220.101.45',
-                    'destination.ip': '10.45.67.23',
-                    'network.protocol': 'tcp',
-                    'destination.port': 22,
-                    'tags': ['ssh_brute_force', 'blocked'],
-                    'threat.indicator.type': 'ip',
-                    'threat.tactic': 'credential_access',
-                    'blocked': True,
-                    'event.severity': 'critical'
-                }
-            ],
+            unit_map = {
+                'seconds': 's',
+                'minutes': 'm',
+                'hours': 'h',
+                'days': 'd',
+                'weeks': 'w',
+                'months': 'M',
+                'years': 'y'
+            }
             
-            'space_threat_intelligence': [
-                {
-                    '@timestamp': '2025-01-15T12:00:00Z',
-                    'threat.group.name': 'APT-SpaceStorm',
-                    'threat.tactic': ['initial_access', 'persistence', 'command_and_control'],
-                    'threat.technique': 'spear_phishing',
-                    'targets': 'satellite_communication_systems',
-                    'indicators': ['185.220.101.45', 'space-ops.malicious.com'],
-                    'risk_level': 'critical',
-                    'last_seen': '2 days ago',
-                    'attribution': 'nation_state_actor',
-                    'campaigns': ['operation_orbital_breach'],
-                    'affected_missions': ['earth_observation', 'navigation'],
-                    'mitigation_status': 'active_monitoring'
-                },
-                {
-                    '@timestamp': '2025-01-14T08:30:00Z',
-                    'threat.group.name': 'CyberSat-Collective',
-                    'threat.tactic': ['lateral_movement', 'data_exfiltration'],
-                    'threat.technique': 'remote_access_tools',
-                    'targets': 'ground_station_infrastructure',
-                    'indicators': ['203.45.67.89', 'gscontrol.compromised.net'],
-                    'risk_level': 'high',
-                    'last_seen': '1 week ago',
-                    'attribution': 'cybercriminal_group',
-                    'campaigns': ['ransomware_space_ops'],
-                    'mitigation_status': 'contained'
-                }
-            ],
+            es_unit = unit_map.get(unit, 'd')
             
-            'communication_security': [
-                {
-                    '@timestamp': '2025-01-15T11:15:30Z',
-                    'satellite.name': 'INSAT-3DR',
-                    'satellite.id': 'INSAT3DR-001',
-                    'frequency': '4.2_GHz',
-                    'communication.type': 'weather_data',
-                    'anomaly.type': 'signal_interference',
-                    'location.coordinates': [68.5, 12.8],
-                    'location.description': 'Arabian_Sea',
-                    'duration': '15 minutes',
-                    'impact': 'weather_data_delay',
-                    'interference.source': 'unknown',
-                    'investigation.status': 'ongoing',
-                    'event.severity': 'medium'
-                },
-                {
-                    '@timestamp': '2025-01-15T13:45:22Z',
-                    'satellite.name': 'RISAT-2B',
-                    'satellite.id': 'RISAT2B-001',
-                    'frequency': '5.6_GHz',
-                    'communication.type': 'radar_data',
-                    'anomaly.type': 'unauthorized_access_attempt',
-                    'source.ip': 'unknown',
-                    'attack.vector': 'frequency_hijacking',
-                    'blocked': True,
-                    'investigation.status': 'escalated',
-                    'threat.level': 'high',
-                    'event.severity': 'critical'
+            return {
+                "range": {
+                    "@timestamp": {
+                        "gte": f"now-{value}{es_unit}",
+                        "lte": "now"
+                    }
                 }
+            }
+    
+    def _add_entity_filters(self, query, entities):
+        """Add entity-based filters to query"""
+        if 'event_type' in entities:
+            event_queries = self._build_event_filter(entities['event_type'])
+            query["bool"]["must"].extend(event_queries)
+        
+        if 'ip' in entities:
+            ip_list = entities['ip'] if isinstance(entities['ip'], list) else [entities['ip']]
+            query["bool"]["should"].extend([
+                {"terms": {"source.ip": ip_list}},
+                {"terms": {"destination.ip": ip_list}}
+            ])
+            query["bool"]["minimum_should_match"] = 1
+        
+        if 'user' in entities:
+            query["bool"]["must"].append({
+                "multi_match": {
+                    "query": entities['user'],
+                    "fields": ["user.name", "user.id", "user.email"]
+                }
+            })
+        
+        if 'host' in entities:
+            query["bool"]["must"].append({
+                "multi_match": {
+                    "query": entities['host'],
+                    "fields": ["host.name", "host.hostname", "agent.hostname"]
+                }
+            })
+        
+        if 'hash' in entities:
+            hash_list = entities['hash'] if isinstance(entities['hash'], list) else [entities['hash']]
+            query["bool"]["must"].append({"terms": {"file.hash.sha256": hash_list}})
+        
+        if 'domain' in entities:
+            domain_list = entities['domain'] if isinstance(entities['domain'], list) else [entities['domain']]
+            query["bool"]["must"].append({"terms": {"url.domain": domain_list}})
+    
+    def _add_additional_filters(self, query, filters):
+        """Add additional filters to query"""
+        if 'outcome' in filters:
+            query["bool"]["filter"].append({"term": {"event.outcome": filters['outcome']}})
+        
+        if 'severity' in filters:
+            query["bool"]["filter"].append({"term": {"event.severity": filters['severity']}})
+        
+        if filters.get('vpn'):
+            query["bool"]["must"].append({"match": {"network.type": "vpn"}})
+        
+        if filters.get('mfa'):
+            query["bool"]["must"].append({"match": {"authentication.method": "mfa"}})
+        
+        if filters.get('suspicious'):
+            query["bool"]["should"].extend([
+                {"range": {"event.risk_score": {"gte": 70}}},
+                {"term": {"threat.indicator.confidence": "high"}},
+                {"terms": {"event.category": ["malware", "intrusion_detection"]}}
+            ])
+            query["bool"]["minimum_should_match"] = 1
+        
+        if filters.get('malware'):
+            query["bool"]["must"].append({"term": {"event.category": "malware"}})
+        
+        if 'attack_type' in filters:
+            query["bool"]["must"].append({"match": {"attack.technique": filters['attack_type']}})
+    
+    def _build_event_filter(self, event_type):
+        """Build event type specific filters"""
+        queries = []
+        
+        event_mappings = {
+            'login': [
+                {"term": {"event.category": "authentication"}},
+                {"terms": {"event.action": ["logon", "login", "sign-in"]}}
+            ],
+            'failed_login': [
+                {"term": {"event.category": "authentication"}},
+                {"term": {"event.outcome": "failure"}}
+            ],
+            'malware': [
+                {"terms": {"event.category": ["malware", "threat"]}}
+            ],
+            'network': [
+                {"terms": {"event.category": ["network", "network_traffic"]}}
+            ],
+            'file_access': [
+                {"terms": {"event.category": ["file", "file_system"]}}
+            ],
+            'process': [
+                {"terms": {"event.category": ["process", "host"]}}
             ]
         }
-
-    def execute_query(self, query_analysis: Dict) -> Dict:
-        """Execute query and return mock results with realistic processing"""
-        # Simulate processing delay
-        processing_time = random.uniform(0.8, 2.5)
-        time.sleep(processing_time / 10)  # Reduced for demo
         
-        # Determine data type based on query analysis
-        data_type = self._determine_data_type(query_analysis)
-        
-        # Get relevant mock data
-        raw_data = self.mock_data.get(data_type, [])
-        
-        # Filter and process data based on query
-        filtered_data = self._filter_data(raw_data, query_analysis)
-        
-        # Generate aggregations if needed
-        aggregations = self._generate_aggregations(filtered_data, query_analysis)
-        
-        return {
-            'total_hits': len(filtered_data),
-            'took': round(processing_time * 1000),  # Convert to milliseconds
-            'data': filtered_data,
-            'aggregations': aggregations,
-            'query_metadata': {
-                'data_type': data_type,
-                'processing_time': processing_time,
-                'confidence': query_analysis.get('confidence', 0.8)
+        return event_mappings.get(event_type, [])
+    
+    def _build_comprehensive_aggregations(self, entities, analysis_types):
+        """Build comprehensive aggregations for analysis"""
+        aggs = {
+            "events_over_time": {
+                "date_histogram": {
+                    "field": "@timestamp",
+                    "calendar_interval": "1h",
+                    "min_doc_count": 1
+                }
+            },
+            "top_events": {
+                "terms": {
+                    "field": "event.action.keyword",
+                    "size": 20
+                }
+            },
+            "top_users": {
+                "terms": {
+                    "field": "user.name.keyword",
+                    "size": 15
+                }
+            },
+            "top_source_ips": {
+                "terms": {
+                    "field": "source.ip",
+                    "size": 15
+                }
+            },
+            "event_outcomes": {
+                "terms": {
+                    "field": "event.outcome",
+                    "size": 5
+                }
+            },
+            "severity_distribution": {
+                "terms": {
+                    "field": "event.severity",
+                    "size": 10
+                }
+            },
+            "geographic_distribution": {
+                "terms": {
+                    "field": "source.geo.country_name.keyword",
+                    "size": 10
+                }
             }
         }
+        
+        # Add analysis-specific aggregations
+        if 'trend' in analysis_types:
+            aggs["daily_trends"] = {
+                "date_histogram": {
+                    "field": "@timestamp",
+                    "calendar_interval": "1d",
+                    "min_doc_count": 1
+                }
+            }
+        
+        if 'correlation' in analysis_types:
+            aggs["user_ip_correlation"] = {
+                "composite": {
+                    "sources": [
+                        {"user": {"terms": {"field": "user.name.keyword"}}},
+                        {"ip": {"terms": {"field": "source.ip"}}}
+                    ],
+                    "size": 100
+                }
+            }
+        
+        return aggs
 
-    def _determine_data_type(self, query_analysis: Dict) -> str:
-        """Determine which data type to return based on query analysis"""
-        query = query_analysis['original_query'].lower()
-        
-        if any(term in query for term in ['ground station', 'authentication', 'failed', 'login']):
-            return 'ground_station_security'
-        elif any(term in query for term in ['mission', 'chandrayaan', 'aditya', 'critical']):
-            return 'mission_critical_events'
-        elif any(term in query for term in ['threat', 'intelligence', 'apt']):
-            return 'space_threat_intelligence'
-        elif any(term in query for term in ['communication', 'satellite', 'signal']):
-            return 'communication_security'
-        else:
-            return 'ground_station_security'  # Default
-
-    def _filter_data(self, data: List[Dict], query_analysis: Dict) -> List[Dict]:
-        """Filter data based on query parameters"""
-        filtered = data.copy()
-        
-        # Filter by mission context if specified
-        if query_analysis.get('mission_context'):
-            mission = query_analysis['mission_context']['mission']
-            filtered = [item for item in filtered 
-                       if item.get('mission.name', '').startswith(mission) or 
-                          mission in item.get('tags', [])]
-        
-        # Filter by priority/severity
-        if query_analysis.get('priority') == 'CRITICAL':
-            filtered = [item for item in filtered 
-                       if item.get('event.severity') in ['critical', 'high'] or
-                          item.get('event.risk_score', 0) >= 80]
-        
-        # Simulate time-based filtering (simplified for demo)
-        if query_analysis.get('time_range', {}).get('phrase') == 'yesterday':
-            # In a real implementation, this would filter by actual timestamps
-            filtered = filtered[:2]  # Return subset for demo
-        
-        return filtered
-
-    def _generate_aggregations(self, data: List[Dict], query_analysis: Dict) -> Dict:
-        """Generate aggregations for analysis queries"""
-        if not data or query_analysis.get('intent') != 'analyze':
-            return {}
-        
-        aggregations = {}
-        
-        # Count by severity
-        severity_counts = {}
-        for item in data:
-            severity = item.get('event.severity', 'unknown')
-            severity_counts[severity] = severity_counts.get(severity, 0) + 1
-        
-        aggregations['severity_distribution'] = severity_counts
-        
-        # Count by mission if applicable
-        if any('mission.name' in item for item in data):
-            mission_counts = {}
-            for item in data:
-                mission = item.get('mission.name', 'unknown')
-                mission_counts[mission] = mission_counts.get(mission, 0) + 1
-            aggregations['mission_distribution'] = mission_counts
-        
-        return aggregations
-
-
-class EnhancedContextManager:
-    """Enhanced context manager with persistent conversation state"""
+class AdvancedVisualizationGenerator:
+    """Generate advanced visualizations using matplotlib, seaborn, and plotly"""
     
     def __init__(self):
-        self.sessions = {}
-        self.global_context = {
-            'active_investigations': 0,
-            'total_queries': 0,
-            'performance_metrics': {
-                'avg_response_time': 1.2,
-                'accuracy_rate': 0.94,
-                'context_retention': 0.98
-            }
-        }
-
-    def create_session(self, session_id: str) -> Dict:
-        """Create enhanced conversation session"""
-        self.sessions[session_id] = {
-            'id': session_id,
-            'created_at': datetime.now().isoformat(),
-            'messages': [],
-            'context': {
-                'current_mission': 'general',
-                'entity_history': [],
-                'query_patterns': [],
-                'investigation_thread': None
-            },
-            'query_history': [],
-            'performance_stats': {
-                'queries_count': 0,
-                'avg_processing_time': 0,
-                'context_switches': 0
-            }
-        }
-        return self.sessions[session_id]
-
-    def add_message(self, session_id: str, query_analysis: Dict, results: Dict) -> None:
-        """Add message with enhanced context tracking"""
-        if session_id not in self.sessions:
-            self.create_session(session_id)
+        # Set style for better-looking plots
+        plt.style.use('seaborn-v0_8')
+        sns.set_palette("husl")
+    
+    def generate_comprehensive_visualization(self, results, parsed_data, statistics):
+        """Generate comprehensive visualization suite"""
+        visualizations = {}
         
-        session = self.sessions[session_id]
+        try:
+            # Time series analysis
+            if 'events_over_time' in results.get('aggregations', {}):
+                visualizations['timeline'] = self._create_timeline_chart(
+                    results['aggregations']['events_over_time']
+                )
+            
+            # Distribution charts
+            if statistics.get('event_types'):
+                visualizations['event_distribution'] = self._create_distribution_chart(
+                    statistics['event_types'], 'Event Types Distribution'
+                )
+            
+            # Geographic visualization
+            if 'geographic_distribution' in results.get('aggregations', {}):
+                visualizations['geo_map'] = self._create_geographic_visualization(
+                    results['aggregations']['geographic_distribution']
+                )
+            
+            # Network analysis
+            if statistics.get('users') and statistics.get('source_ips'):
+                visualizations['network_graph'] = self._create_network_graph(
+                    statistics['users'], statistics.get('source_ips', {})
+                )
+            
+            # Heatmap for correlation analysis
+            if len(statistics) > 2:
+                visualizations['correlation_heatmap'] = self._create_correlation_heatmap(statistics)
+            
+            # Threat landscape overview
+            visualizations['threat_overview'] = self._create_threat_overview(statistics)
+            
+            return visualizations
+            
+        except Exception as e:
+            print(f"Visualization generation error: {e}")
+            return {"error": f"Failed to generate visualizations: {str(e)}"}
+    
+    def _create_timeline_chart(self, time_data):
+        """Create interactive timeline chart"""
+        buckets = time_data.get('buckets', [])
         
-        # Add to message history
-        message_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'query': query_analysis['original_query'],
-            'intent': query_analysis['intent'],
-            'entities': [e['term'] for e in query_analysis['entities']],
-            'results_count': results['total_hits'],
-            'processing_time': query_analysis['processing_time']
-        }
+        dates = [bucket['key_as_string'] for bucket in buckets]
+        counts = [bucket['doc_count'] for bucket in buckets]
         
-        session['messages'].append(message_entry)
-        session['query_history'].append(query_analysis)
+        fig, ax = plt.subplots(figsize=(14, 6))
+        ax.plot(dates, counts, marker='o', linewidth=2, markersize=4)
+        ax.fill_between(dates, counts, alpha=0.3)
         
-        # Update context
-        self._update_context(session, query_analysis, results)
+        ax.set_title('Security Events Timeline', fontsize=16, fontweight='bold')
+        ax.set_xlabel('Time', fontsize=12)
+        ax.set_ylabel('Event Count', fontsize=12)
+        ax.grid(True, alpha=0.3)
         
-        # Update performance stats
-        self._update_performance_stats(session, query_analysis)
+        # Rotate x-axis labels for better readability
+        plt.xticks(rotation=45)
+        plt.tight_layout()
         
-        # Update global context
-        self.global_context['total_queries'] += 1
-
-    def _update_context(self, session: Dict, query_analysis: Dict, results: Dict) -> None:
-        """Update session context with intelligence"""
-        context = session['context']
+        return self._fig_to_base64(fig)
+    
+    def _create_distribution_chart(self, data, title):
+        """Create distribution pie chart with enhanced styling"""
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
         
-        # Track entity usage patterns
-        for entity in query_analysis['entities']:
-            entity_term = entity['term']
-            if entity_term not in context['entity_history']:
-                context['entity_history'].append(entity_term)
-            else:
-                # Move to end (recent usage)
-                context['entity_history'].remove(entity_term)
-                context['entity_history'].append(entity_term)
+        # Sort data and take top 10
+        sorted_data = dict(sorted(data.items(), key=lambda x: x[1], reverse=True)[:10])
         
-        # Keep only last 10 entities
-        context['entity_history'] = context['entity_history'][-10:]
-        
-        # Track query patterns
-        pattern = {
-            'intent': query_analysis['intent'],
-            'entity_count': len(query_analysis['entities']),
-            'priority': query_analysis['priority'],
-            'has_time_context': bool(query_analysis.get('time_range')),
-            'has_mission_context': bool(query_analysis.get('mission_context'))
-        }
-        context['query_patterns'].append(pattern)
-        
-        # Keep only last 5 patterns
-        context['query_patterns'] = context['query_patterns'][-5:]
-        
-        # Update mission context if detected
-        if query_analysis.get('mission_context'):
-            new_mission = query_analysis['mission_context']['mission']
-            if context['current_mission'] != new_mission:
-                context['current_mission'] = new_mission
-                session['performance_stats']['context_switches'] += 1
-
-    def _update_performance_stats(self, session: Dict, query_analysis: Dict) -> None:
-        """Update performance statistics"""
-        stats = session['performance_stats']
-        stats['queries_count'] += 1
-        
-        # Update average processing time
-        current_avg = stats['avg_processing_time']
-        new_time = query_analysis['processing_time']
-        stats['avg_processing_time'] = (
-            (current_avg * (stats['queries_count'] - 1) + new_time) / stats['queries_count']
+        # Pie chart
+        colors = plt.cm.Set3(np.linspace(0, 1, len(sorted_data)))
+        wedges, texts, autotexts = ax1.pie(
+            sorted_data.values(), 
+            labels=sorted_data.keys(),
+            autopct='%1.1f%%',
+            startangle=90,
+            colors=colors,
+            explode=[0.05] * len(sorted_data)
         )
-
-    def get_context_for_query(self, session_id: str) -> Dict:
-        """Get enhanced context for query processing"""
-        if session_id not in self.sessions:
-            return {'current_mission': 'general'}
+        ax1.set_title(title, fontsize=14, fontweight='bold')
         
-        session = self.sessions[session_id]
-        context = session['context'].copy()
+        # Bar chart
+        ax2.bar(range(len(sorted_data)), list(sorted_data.values()), color=colors)
+        ax2.set_xticks(range(len(sorted_data)))
+        ax2.set_xticklabels(sorted_data.keys(), rotation=45, ha='right')
+        ax2.set_title('Event Counts', fontsize=14, fontweight='bold')
+        ax2.set_ylabel('Count', fontsize=12)
         
-        # Add recent query insights
-        if session['query_history']:
-            recent_queries = session['query_history'][-3:]
-            context['recent_intents'] = [q['intent'] for q in recent_queries]
-            context['recent_entities'] = []
-            for q in recent_queries:
-                context['recent_entities'].extend([e['term'] for e in q['entities']])
+        plt.tight_layout()
+        return self._fig_to_base64(fig)
+    
+    def _create_geographic_visualization(self, geo_data):
+        """Create geographic distribution visualization"""
+        buckets = geo_data.get('buckets', [])
+        countries = [bucket['key'] for bucket in buckets]
+        counts = [bucket['doc_count'] for bucket in buckets]
         
-        return context
-
+        fig, ax = plt.subplots(figsize=(12, 8))
+        bars = ax.barh(countries, counts)
+        ax.set_title('Geographic Distribution of Security Events', fontsize=16, fontweight='bold')
+        ax.set_xlabel('Event Count', fontsize=12)
+        ax.set_ylabel('Country', fontsize=12)
+        
+        # Color bars based on count
+        colors = plt.cm.Reds(np.linspace(0.4, 1, len(counts)))
+        for bar, color in zip(bars, colors):
+            bar.set_color(color)
+        
+        plt.tight_layout()
+        return self._fig_to_base64(fig)
+    
+    def _create_network_graph(self, users, ips):
+        """Create network graph showing user-IP relationships"""
+        G = nx.Graph()
+        
+        # Add nodes
+        for user in list(users.keys())[:10]:  # Top 10 users
+            G.add_node(f"user_{user}", type='user', size=users[user])
+        
+        for ip in list(ips.keys())[:15]:  # Top 15 IPs
+            G.add_node(f"ip_{ip}", type='ip', size=ips[ip])
+        
+        # Add edges (simplified - in real implementation, use correlation data)
+        user_nodes = [n for n in G.nodes() if n.startswith('user_')]
+        ip_nodes = [n for n in G.nodes() if n.startswith('ip_')]
+        
+        # Create some connections based on activity levels
+        for i, user in enumerate(user_nodes[:5]):
+            for j, ip in enumerate(ip_nodes[i:i+3]):  # Connect each user to 3 IPs
+                G.add_edge(user, ip)
+        
+        fig, ax = plt.subplots(figsize=(14, 10))
+        pos = nx.spring_layout(G, k=3, iterations=50)
+        
+        # Draw nodes
+        user_nodes = [n for n in G.nodes() if n.startswith('user_')]
+        ip_nodes = [n for n in G.nodes() if n.startswith('ip_')]
+        
+        nx.draw_networkx_nodes(G, pos, nodelist=user_nodes, node_color='lightblue', 
+                              node_size=300, alpha=0.8, ax=ax)
+        nx.draw_networkx_nodes(G, pos, nodelist=ip_nodes, node_color='lightcoral', 
+                              node_size=200, alpha=0.8, ax=ax)
+        
+        # Draw edges
+        nx.draw_networkx_edges(G, pos, alpha=0.5, ax=ax)
+        
+        # Draw labels
+        labels = {node: node.split('_')[1] for node in G.nodes()}
+        nx.draw_networkx_labels(G, pos, labels, font_size=8, ax=ax)
+        
+        ax.set_title('User-IP Network Relationships', fontsize=16, fontweight='bold')
+        ax.axis('off')
+        
+        plt.tight_layout()
+        return self._fig_to_base64(fig)
+    
+    def _create_correlation_heatmap(self, statistics):
+        """Create correlation heatmap for different metrics"""
+        # Prepare correlation data
+        metrics = {}
+        
+        if 'event_types' in statistics:
+            metrics.update({f"event_{k}": v for k, v in list(statistics['event_types'].items())[:10]})
+        if 'users' in statistics:
+            metrics.update({f"user_{k}": v for k, v in list(statistics['users'].items())[:5]})
+        if 'outcomes' in statistics:
+            metrics.update(statistics['outcomes'])
+        
+        # Create correlation matrix
+        df = pd.DataFrame([metrics])
+        correlation_matrix = df.corr()
+        
+        fig, ax = plt.subplots(figsize=(12, 10))
+        sns.heatmap(correlation_matrix, annot=True, cmap='RdYlBu_r', center=0, ax=ax)
+        ax.set_title('Security Metrics Correlation Matrix', fontsize=16, fontweight='bold')
+        
+        plt.tight_layout()
+        return self._fig_to_base64(fig)
+    
+    def _create_threat_overview(self, statistics):
+        """Create comprehensive threat landscape overview"""
+        fig = plt.figure(figsize=(16, 12))
+        gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
+        
+        # Threat severity gauge
+        ax1 = fig.add_subplot(gs[0, 0])
+        threat_levels = statistics.get('outcomes', {})
+        if threat_levels:
+            total_events = sum(threat_levels.values())
+            failure_rate = threat_levels.get('failure', 0) / total_events * 100 if total_events > 0 else 0
+            
+            colors = ['green', 'yellow', 'orange', 'red']
+            sizes = [25, 25, 25, 25]
+            if failure_rate < 10:
+                explode = [0.1, 0, 0, 0]
+            elif failure_rate < 30:
+                explode = [0, 0.1, 0, 0]
+            elif failure_rate < 50:
+                explode = [0, 0, 0.1, 0]
+            else:
+                explode = [0, 0, 0, 0.1]
+            
+            ax1.pie(sizes, colors=colors, explode=explode, startangle=90)
+            ax1.set_title(f'Threat Level\n({failure_rate:.1f}% Failed Events)', fontsize=12)
+        
+        # Top threats
+        ax2 = fig.add_subplot(gs[0, 1:])
+        if 'event_types' in statistics:
+            top_events = dict(sorted(statistics['event_types'].items(), key=lambda x: x[1], reverse=True)[:8])
+            bars = ax2.barh(range(len(top_events)), list(top_events.values()))
+            ax2.set_yticks(range(len(top_events)))
+            ax2.set_yticklabels(top_events.keys())
+            ax2.set_title('Top Security Events', fontsize=12)
+            
+            # Color bars by threat level
+            max_val = max(top_events.values()) if top_events else 1
+            colors = plt.cm.Reds(np.array(list(top_events.values())) / max_val)
+            for bar, color in zip(bars, colors):
+                bar.set_color(color)
+        
+        # Hourly activity
+        ax3 = fig.add_subplot(gs[1, :])
+        if 'hourly_distribution' in statistics:
+            hours = sorted(statistics['hourly_distribution'].keys())
+            counts = [statistics['hourly_distribution'][h] for h in hours]
+            ax3.plot(hours, counts, marker='o', linewidth=2)
+            ax3.fill_between(hours, counts, alpha=0.3)
+            ax3.set_title('24-Hour Activity Pattern', fontsize=12)
+            ax3.set_xlabel('Hour of Day')
+            ax3.set_ylabel('Event Count')
+            ax3.grid(True, alpha=0.3)
+        
+        # Word cloud for event types
+        ax4 = fig.add_subplot(gs[2, :2])
+        if 'event_types' in statistics:
+            wordcloud = WordCloud(width=400, height=200, background_color='white').generate_from_frequencies(
+                statistics['event_types']
+            )
+            ax4.imshow(wordcloud, interpolation='bilinear')
+            ax4.set_title('Event Types Word Cloud', fontsize=12)
+            ax4.axis('off')
+        
+        # Risk score distribution
+        ax5 = fig.add_subplot(gs[2, 2])
+        risk_scores = [20, 35, 30, 15]  # Mock risk distribution
+        risk_labels = ['Low', 'Medium', 'High', 'Critical']
+        colors = ['green', 'yellow', 'orange', 'red']
+        ax5.pie(risk_scores, labels=risk_labels, colors=colors, autopct='%1.1f%%')
+        ax5.set_title('Risk Distribution', fontsize=12)
+        
+        plt.suptitle('Security Threat Landscape Overview', fontsize=18, fontweight='bold', y=0.98)
+        return self._fig_to_base64(fig)
+    
+    def _fig_to_base64(self, fig):
+        """Convert matplotlib figure to base64 string"""
+        img_buffer = io.BytesIO()
+        fig.savefig(img_buffer, format='png', dpi=100, bbox_inches='tight', 
+                   facecolor='white', edgecolor='none')
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.read()).decode()
+        plt.close(fig)
+        return f'data:image/png;base64,{img_base64}'
 
 class EnhancedResponseFormatter:
-    """Enhanced response formatter with rich visualizations"""
+    """Enhanced response formatter with rich content generation"""
     
     def __init__(self):
-        self.visualization_templates = {
-            'timeline': self._create_timeline_viz,
-            'bar_chart': self._create_bar_chart_viz,
-            'table': self._create_table_viz,
-            'heatmap': self._create_heatmap_viz,
-            'network_graph': self._create_network_viz
-        }
-
-    def format_response(self, query_analysis: Dict, results: Dict, context: Dict = None) -> Dict:
-        """Format comprehensive response with visualizations"""
-        formatted_response = {
-            'success': True,
-            'query_analysis': {
-                'intent': query_analysis['intent'],
-                'entities': [e['term'] for e in query_analysis['entities']],
-                'confidence': query_analysis['confidence'],
-                'priority': query_analysis['priority'],
-                'processing_time': query_analysis['processing_time']
-            },
-            'results_summary': self._generate_summary(results, query_analysis),
-            'data': results['data'][:10],  # Limit for UI display
-            'total_results': results['total_hits'],
-            'visualizations': self._suggest_visualizations(results, query_analysis),
-            'insights': self._generate_insights(results, query_analysis),
-            'follow_up_suggestions': query_analysis.get('follow_up_suggestions', []),
-            'context_info': self._format_context_info(context),
-            'performance': {
-                'query_time': results.get('took', 0),
-                'processing_time': query_analysis['processing_time'],
-                'data_source': results.get('query_metadata', {}).get('data_type', 'unknown')
+        self.viz_generator = AdvancedVisualizationGenerator()
+    
+    def format_response(self, results, intent, parsed_data):
+        """Format comprehensive response with multiple content types"""
+        if intent == 'search':
+            return self._format_search_results(results, parsed_data)
+        elif intent == 'aggregate':
+            return self._format_aggregate_results(results, parsed_data)
+        elif intent == 'report':
+            return self._format_comprehensive_report(results, parsed_data)
+        elif intent == 'visualize':
+            return self._format_visualization_response(results, parsed_data)
+        elif intent == 'compare':
+            return self._format_comparison_analysis(results, parsed_data)
+        elif intent == 'trend':
+            return self._format_trend_analysis(results, parsed_data)
+        else:
+            return self._format_search_results(results, parsed_data)
+    
+    def _format_search_results(self, results, parsed_data):
+        """Enhanced search results formatting"""
+        if not results or 'hits' not in results:
+            return {
+                'text': "No security events found matching your query criteria.",
+                'count': 0,
+                'results': [],
+                'suggestions': self._generate_search_suggestions(parsed_data)
             }
-        }
         
-        return formatted_response
-
-    def _generate_summary(self, results: Dict, query_analysis: Dict) -> str:
-        """Generate intelligent summary of results"""
-        total = results['total_hits']
-        data_type = results.get('query_metadata', {}).get('data_type', 'events')
+        hits = results['hits']['hits']
+        total = results['hits']['total']['value']
         
-        if total == 0:
-            return f"No {data_type.replace('_', ' ')} found matching your criteria. Consider broadening your search parameters."
+        # Enhanced result processing
+        formatted_results = []
+        threat_indicators = []
         
-        summary = f"Found {total} {data_type.replace('_', ' ')}"
+        for hit in hits[:20]:  # Show top 20
+            source = hit['_source']
+            
+            # Extract comprehensive event data
+            event_data = {
+                'timestamp': source.get('@timestamp', 'N/A'),
+                'event': source.get('event', {}).get('action', 'N/A'),
+                'category': source.get('event', {}).get('category', 'N/A'),
+                'user': source.get('user', {}).get('name', 'N/A'),
+                'source_ip': source.get('source', {}).get('ip', 'N/A'),
+                'destination_ip': source.get('destination', {}).get('ip', 'N/A'),
+                'outcome': source.get('event', {}).get('outcome', 'N/A'),
+                'host': source.get('host', {}).get('name', 'N/A'),
+                'severity': source.get('event', {}).get('severity', 'N/A'),
+                'risk_score': source.get('event', {}).get('risk_score', 'N/A')
+            }
+            
+            formatted_results.append(event_data)
+            
+            # Identify potential threats
+            if event_data['outcome'] == 'failure' or event_data['severity'] in ['high', 'critical']:
+                threat_indicators.append(event_data)
         
-        # Add context based on priority
-        if query_analysis['priority'] == 'CRITICAL':
-            critical_count = sum(1 for item in results['data'] 
-                               if item.get('event.severity') in ['critical', 'high'])
-            if critical_count > 0:
-                summary += f", including {critical_count} critical incidents requiring immediate attention"
+        # Generate summary statistics
+        statistics = self._generate_statistics(formatted_results)
         
-        # Add mission context if present
-        if query_analysis.get('mission_context'):
-            mission = query_analysis['mission_context']['mission']
-            summary += f" related to {mission} mission operations"
-        
-        # Add time context
-        if query_analysis.get('time_range'):
-            time_phrase = query_analysis['time_range']['phrase']
-            summary += f" from {time_phrase}"
-        
-        return summary + "."
-
-    def _suggest_visualizations(self, results: Dict, query_analysis: Dict) -> List[Dict]:
-        """Suggest appropriate visualizations"""
-        suggestions = []
-        total_results = results['total_hits']
-        
-        if total_results > 20:
-            suggestions.append({
-                'type': 'timeline',
-                'title': 'Event Timeline',
-                'description': 'Chronological view of security events'
-            })
-        
-        if total_results > 5:
-            suggestions.append({
-                'type': 'bar_chart',
-                'title': 'Distribution Analysis',
-                'description': 'Event distribution by category/severity'
-            })
-        
-        if query_analysis['intent'] == 'analyze':
-            suggestions.append({
-                'type': 'heatmap',
-                'title': 'Risk Heatmap',
-                'description': 'Visual risk assessment across systems'
-            })
-        
-        # Always suggest table for detailed view
-        suggestions.append({
-            'type': 'table',
-            'title': 'Detailed Results',
-            'description': 'Comprehensive tabular view of all events'
-        })
-        
-        return suggestions
-
-    def _generate_insights(self, results: Dict, query_analysis: Dict) -> List[str]:
-        """Generate actionable insights from results"""
-        insights = []
-        data = results['data']
-        
-        if not data:
-            return ["No data available for insight generation"]
-        
-        # Severity analysis
-        critical_events = [item for item in data if item.get('event.severity') == 'critical']
-        if critical_events:
-            insights.append(f"🚨 {len(critical_events)} critical security events require immediate investigation")
-        
-        # Source IP analysis
-        source_ips = set()
-        for item in data:
-            if 'source.ip' in item:
-                source_ips.add(item['source.ip'])
-        
-        if len(source_ips) > 3:
-            insights.append(f"🌐 Multiple source IPs ({len(source_ips)}) detected - possible coordinated attack")
-        
-        # Mission impact analysis
-        missions_affected = set()
-        for item in data:
-            if 'mission.name' in item:
-                missions_affected.add(item['mission.name'])
-        
-        if missions_affected:
-            insights.append(f"🚀 {len(missions_affected)} active missions potentially affected")
-        
-        # Time pattern analysis
-        if len(data) > 5:
-            insights.append("📊 Event clustering detected - recommend timeline analysis")
-        
-        return insights[:4]  # Limit to top 4 insights
-
-    def _format_context_info(self, context: Dict) -> Dict:
-        """Format context information for response"""
-        if not context:
-            return {}
+        # Create narrative summary
+        summary = self._generate_narrative_summary(formatted_results, parsed_data, total)
         
         return {
-            'current_mission': context.get('current_mission', 'general'),
-            'entity_history': context.get('entity_history', [])[-5:],  # Last 5 entities
-            'recent_intents': context.get('recent_intents', []),
-            'context_switches': context.get('context_switches', 0)
+            'text': summary,
+            'count': total,
+            'results': formatted_results,
+            'statistics': statistics,
+            'threat_indicators': threat_indicators,
+            'query_confidence': parsed_data.get('confidence', 0.7),
+            'analysis_suggestions': self._generate_analysis_suggestions(statistics)
         }
+    
+    def _format_comprehensive_report(self, results, parsed_data):
+        """Generate comprehensive security report"""
+        if not results or 'hits' not in results:
+            return {
+                'text': "Insufficient data available for comprehensive report generation.",
+                'count': 0
+            }
+        
+        hits = results['hits']['hits']
+        total = results['hits']['total']['value']
+        aggregations = results.get('aggregations', {})
+        
+        # Comprehensive analysis
+        statistics = self._analyze_comprehensive_data(hits, aggregations)
+        
+        # Generate executive summary
+        exec_summary = self._generate_executive_summary(statistics, parsed_data)
+        
+        # Detailed analysis sections
+        threat_analysis = self._generate_threat_analysis(statistics)
+        trend_analysis = self._generate_trend_analysis(statistics)
+        recommendations = self._generate_security_recommendations(statistics)
+        
+        # Generate visualizations
+        visualizations = self._generate_report_visualizations(results, statistics)
+        
+        report = {
+            'executive_summary': exec_summary,
+            'detailed_analysis': {
+                'threat_landscape': threat_analysis,
+                'trends': trend_analysis,
+                'statistics': statistics
+            },
+            'visualizations': visualizations,
+            'recommendations': recommendations,
+            'metadata': {
+                'generated_at': datetime.now().isoformat(),
+                'query': parsed_data['original_query'],
+                'time_range': parsed_data['time_range'],
+                'total_events': total,
+                'confidence_score': parsed_data.get('confidence', 0.7)
+            }
+        }
+        
+        return {
+            'text': exec_summary,
+            'report': report,
+            'count': total,
+            'statistics': statistics
+        }
+    
+    def _generate_narrative_summary(self, results, parsed_data, total):
+        """Generate intelligent narrative summary"""
+        if not results:
+            return "No security events were found matching your query."
+        
+        # Analyze patterns
+        failed_events = len([r for r in results if r['outcome'] == 'failure'])
+        unique_users = len(set(r['user'] for r in results if r['user'] != 'N/A'))
+        unique_ips = len(set(r['source_ip'] for r in results if r['source_ip'] != 'N/A'))
+        
+        # Build narrative
+        summary = f"Security Analysis Results:\n\n"
+        summary += f"Found {total:,} security events matching your criteria. "
+        
+        if failed_events > 0:
+            failure_rate = (failed_events / len(results)) * 100
+            summary += f"Of these, {failed_events:,} events ({failure_rate:.1f}%) resulted in failures, "
+            summary += "indicating potential security concerns. "
+        
+        summary += f"The events involved {unique_users} unique users and originated from {unique_ips} distinct IP addresses. "
+        
+        # Add insights based on patterns
+        if failure_rate > 50:
+            summary += "\n\nHIGH ALERT: The high failure rate suggests possible security incidents or attack attempts. "
+        elif failure_rate > 20:
+            summary += "\n\nMODERATE CONCERN: The failure rate is elevated and warrants investigation. "
+        
+        # Time-based insights
+        time_range = parsed_data.get('time_range', {})
+        summary += f"\n\nAnalysis Period: Last {time_range.get('value', 'unknown')} {time_range.get('unit', 'time period')}"
+        
+        return summary
+    
+    def _generate_statistics(self, results):
+        """Generate comprehensive statistics from results"""
+        if not results:
+            return {}
+        
+        statistics = {
+            'event_types': Counter(r['category'] for r in results if r['category'] != 'N/A'),
+            'users': Counter(r['user'] for r in results if r['user'] != 'N/A'),
+            'source_ips': Counter(r['source_ip'] for r in results if r['source_ip'] != 'N/A'),
+            'outcomes': Counter(r['outcome'] for r in results if r['outcome'] != 'N/A'),
+            'hosts': Counter(r['host'] for r in results if r['host'] != 'N/A'),
+            'severity': Counter(r['severity'] for r in results if r['severity'] != 'N/A'),
+            'hourly_distribution': self._calculate_hourly_distribution(results)
+        }
+        
+        return {k: dict(v) for k, v in statistics.items()}
+    
+    def _calculate_hourly_distribution(self, results):
+        """Calculate hourly distribution of events"""
+        hourly_counts = defaultdict(int)
+        
+        for result in results:
+            if result['timestamp'] != 'N/A':
+                try:
+                    dt = datetime.fromisoformat(result['timestamp'].replace('Z', '+00:00'))
+                    hourly_counts[dt.hour] += 1
+                except:
+                    continue
+        
+        return dict(hourly_counts)
+    
+    def _generate_security_recommendations(self, statistics):
+        """Generate actionable security recommendations"""
+        recommendations = []
+        
+        # Analyze failure patterns
+        outcomes = statistics.get('outcomes', {})
+        if outcomes:
+            failure_count = outcomes.get('failure', 0)
+            success_count = outcomes.get('success', 0)
+            total = failure_count + success_count
+            
+            if total > 0 and (failure_count / total) > 0.3:
+                recommendations.append({
+                    'priority': 'HIGH',
+                    'category': 'Authentication Security',
+                    'recommendation': 'High failure rate detected. Implement stronger authentication controls and monitor for brute force attacks.',
+                    'rationale': f'Failure rate is {(failure_count/total)*100:.1f}% which exceeds recommended threshold.'
+                })
+        
+        # Analyze IP patterns
+        source_ips = statistics.get('source_ips', {})
+        if len(source_ips) > 0:
+            top_ip_count = max(source_ips.values()) if source_ips else 0
+            total_events = sum(source_ips.values())
+            
+            if top_ip_count / total_events > 0.5:
+                recommendations.append({
+                    'priority': 'MEDIUM',
+                    'category': 'Network Security',
+                    'recommendation': 'High concentration of events from single IP address. Consider IP-based monitoring and potential blocking.',
+                    'rationale': f'Single IP accounts for {(top_ip_count/total_events)*100:.1f}% of all events.'
+                })
+        
+        # Analyze time patterns
+        hourly_dist = statistics.get('hourly_distribution', {})
+        if hourly_dist:
+            off_hours_events = sum(count for hour, count in hourly_dist.items() if hour < 6 or hour > 22)
+            total_hourly = sum(hourly_dist.values())
+            
+            if off_hours_events / total_hourly > 0.2:
+                recommendations.append({
+                    'priority': 'MEDIUM',
+                    'category': 'Temporal Analysis',
+                    'recommendation': 'Significant off-hours activity detected. Implement enhanced monitoring during non-business hours.',
+                    'rationale': f'{(off_hours_events/total_hourly)*100:.1f}% of events occur outside business hours.'
+                })
+        
+        return recommendations
+    
+    def _generate_report_visualizations(self, results, statistics):
+        """Generate visualizations for the report"""
+        return self.viz_generator.generate_comprehensive_visualization(results, {}, statistics)
 
-    def _create_timeline_viz(self, data: List[Dict]) -> Dict:
-        """Create timeline visualization data"""
-        # Implementation would create timeline visualization data
-        pass
+# Enhanced Context Manager with ML capabilities
+class MLContextManager:
+    """Advanced context manager with machine learning for intent prediction"""
+    
+    def __init__(self):
+        self.contexts = {}
+        self.intent_history = []
+        self.entity_patterns = defaultdict(list)
+    
+    def update_context(self, session_id, parsed_data, results):
+        """Update context with learning capabilities"""
+        if session_id not in self.contexts:
+            self.contexts[session_id] = {
+                'history': [],
+                'last_queries': [],
+                'learned_patterns': {},
+                'user_preferences': {}
+            }
+        
+        context = self.contexts[session_id]
+        
+        # Store query history
+        query_record = {
+            'query': parsed_data['original_query'],
+            'intent': parsed_data['intent'],
+            'entities': parsed_data['entities'],
+            'timestamp': datetime.now().isoformat(),
+            'confidence': parsed_data.get('confidence', 0.7)
+        }
+        
+        context['history'].append(query_record)
+        context['last_queries'].append(parsed_data)
+        
+        # Learn user patterns
+        self._learn_user_patterns(context, parsed_data)
+        
+        # Keep context manageable
+        if len(context['history']) > 20:
+            context['history'] = context['history'][-20:]
+        if len(context['last_queries']) > 10:
+            context['last_queries'] = context['last_queries'][-10:]
+    
+    def _learn_user_patterns(self, context, parsed_data):
+        """Learn patterns from user behavior"""
+        intent = parsed_data['intent']
+        entities = parsed_data['entities']
+        
+        # Learn intent patterns
+        if 'intent_patterns' not in context['learned_patterns']:
+            context['learned_patterns']['intent_patterns'] = defaultdict(int)
+        
+        context['learned_patterns']['intent_patterns'][intent] += 1
+        
+        # Learn entity co-occurrence
+        if 'entity_cooccurrence' not in context['learned_patterns']:
+            context['learned_patterns']['entity_cooccurrence'] = defaultdict(lambda: defaultdict(int))
+        
+        entity_types = list(entities.keys())
+        for i, e1 in enumerate(entity_types):
+            for e2 in entity_types[i+1:]:
+                context['learned_patterns']['entity_cooccurrence'][e1][e2] += 1
 
-    def _create_bar_chart_viz(self, data: List[Dict]) -> Dict:
-        """Create bar chart visualization data"""
-        # Implementation would create bar chart data
-        pass
-
-    def _create_table_viz(self, data: List[Dict]) -> Dict:
-        """Create table visualization data"""
-        # Implementation would create formatted table data
-        pass
-
-    def _create_heatmap_viz(self, data: List[Dict]) -> Dict:
-        """Create heatmap visualization data"""
-        # Implementation would create heatmap data
-        pass
-
-    def _create_network_viz(self, data: List[Dict]) -> Dict:
-        """Create network graph visualization data"""
-        # Implementation would create network graph data
-        pass
-
-
-# Initialize enhanced components
-nlp_processor = ISRONLPProcessor()
-siem_connector = ISROSIEMConnector()
-context_manager = EnhancedContextManager()
+# Main application routes with enhanced functionality
+nlp_parser = AdvancedNLPParser()
+query_generator = EnhancedQueryGenerator(SIEM_SCHEMA)
 response_formatter = EnhancedResponseFormatter()
+context_manager = MLContextManager()
 
-# Enhanced API endpoints
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Enhanced health check with system status"""
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'service': 'ISRO SIEM Assistant API',
-        'version': '2.0.0',
-        'components': {
-            'nlp_processor': 'operational',
-            'siem_connector': 'operational',
-            'context_manager': 'operational',
-            'response_formatter': 'operational'
-        },
-        'performance': {
-            'total_queries_processed': context_manager.global_context['total_queries'],
-            'avg_response_time': context_manager.global_context['performance_metrics']['avg_response_time'],
-            'accuracy_rate': context_manager.global_context['performance_metrics']['accuracy_rate']
-        }
-    })
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-@app.route('/api/query', methods=['POST'])
-def process_enhanced_query():
-    """Process enhanced natural language query with full ISRO context"""
+@app.route('/query', methods=['POST'])
+def process_query():
+    """Enhanced query processing with advanced NLP"""
     try:
         data = request.json
         query = data.get('query', '')
-        session_id = data.get('session_id', str(uuid.uuid4()))
+        session_id = data.get('session_id', 'default')
         
-        if not query.strip():
-            return jsonify({
-                'success': False,
-                'error': 'Empty query provided'
-            }), 400
+        if not query:
+            return jsonify({'error': 'No query provided'}), 400
         
-        # Get session context
-        session_context = context_manager.get_context_for_query(session_id)
+        # Advanced NLP parsing
+        context = context_manager.get_context(session_id)
+        parsed_data = nlp_parser.parse_query(query, context)
         
-        # Enhanced NLP parsing
-        query_analysis = nlp_processor.parse_query(query, session_context)
+        # Merge with learned context
+        parsed_data = context_manager.merge_with_context(session_id, parsed_data)
         
-        # Execute query against mock SIEM
-        results = siem_connector.execute_query(query_analysis)
+        # Generate optimized query
+        es_query = query_generator.generate_query(parsed_data)
         
-        # Format enhanced response
+        # Execute query with fallback to enhanced mock data
+        if es:
+            try:
+                results = es.search(index='logs-*', body=es_query)
+            except Exception as e:
+                print(f"Elasticsearch query error: {e}")
+                results = generate_enhanced_mock_results(parsed_data)
+        else:
+            results = generate_enhanced_mock_results(parsed_data)
+        
+        # Enhanced response formatting
         formatted_response = response_formatter.format_response(
-            query_analysis, results, session_context
+            results, 
+            parsed_data['intent'], 
+            parsed_data
         )
         
-        # Update context
-        context_manager.add_message(session_id, query_analysis, results)
+        # Update ML context
+        context_manager.update_context(session_id, parsed_data, results)
         
         return jsonify({
             'success': True,
-            'session_id': session_id,
-            'query': {
-                'original': query,
-                'kql': query_analysis['kql_query'],
-                'elasticsearch_dsl': query_analysis['elasticsearch_dsl'],
-                'explanation': query_analysis['explanation']
-            },
             'response': formatted_response,
-            'metadata': {
-                'processing_time': query_analysis['processing_time'],
-                'confidence': query_analysis['confidence'],
-                'data_source': 'mock_isro_siem'
-            }
+            'parsed_data': parsed_data,
+            'es_query': es_query,
+            'confidence': parsed_data.get('confidence', 0.7)
         })
-    
+        
     except Exception as e:
-        logger.error(f"Error processing enhanced query: {str(e)}")
         return jsonify({
             'success': False,
-            'error': f'Query processing failed: {str(e)}',
-            'suggestions': [
-                'Try simplifying your query',
-                'Check for spelling errors',
-                'Use specific ISRO mission names (chandrayaan, aditya, gaganyaan)'
-            ]
+            'error': str(e),
+            'debug_info': str(e) if app.debug else None
         }), 500
 
-@app.route('/api/context/<session_id>', methods=['GET'])
-def get_enhanced_context(session_id: str):
-    """Get enhanced conversation context"""
-    context = context_manager.get_context_for_query(session_id)
-    
-    if session_id in context_manager.sessions:
-        session = context_manager.sessions[session_id]
-        return jsonify({
-            'session_id': session_id,
-            'context': context,
-            'statistics': session['performance_stats'],
-            'message_count': len(session['messages']),
-            'created_at': session['created_at']
-        })
-    else:
-        return jsonify({
-            'session_id': session_id,
-            'context': context,
-            'message': 'New session - no history available'
-        })
-
-@app.route('/api/report/generate', methods=['POST'])
-def generate_enhanced_report():
-    """Generate enhanced security report with ISRO context"""
+@app.route('/visualize', methods=['POST'])
+def generate_advanced_visualization():
+    """Generate advanced visualization suite"""
     try:
         data = request.json
-        report_type = data.get('type', 'comprehensive')
-        time_range = data.get('time_range', 'last_24_hours')
-        mission_filter = data.get('mission', None)
+        statistics = data.get('statistics', {})
+        results = data.get('results', {})
         
-        # Generate comprehensive report
-        report_data = {
-            'report_metadata': {
-                'title': f'ISRO Security Analysis Report - {datetime.now().strftime("%Y-%m-%d")}',
-                'generated_at': datetime.now().isoformat(),
-                'report_type': report_type,
-                'time_range': time_range,
-                'mission_scope': mission_filter or 'All ISRO Operations'
-            },
-            'executive_summary': {
-                'total_events_analyzed': 15847,
-                'critical_incidents': 12,
-                'high_priority_alerts': 45,
-                'threats_mitigated': 156,
-                'missions_monitored': ['Chandrayaan-3', 'Aditya-L1', 'PSLV-C58', 'NavIC'],
-                'security_posture': 'GOOD',
-                'recommendations_count': 8
-            },
-            'threat_landscape': {
-                'top_threats': [
-                    {
-                        'name': 'Nation State APT Groups',
-                        'incidents': 45,
-                        'trend': 'increasing',
-                        'target_systems': ['satellite_comm', 'ground_stations'],
-                        'risk_level': 'critical'
-                    },
-                    {
-                        'name': 'Satellite Signal Jamming',
-                        'incidents': 23,
-                        'trend': 'stable',
-                        'target_systems': ['communication_satellites'],
-                        'risk_level': 'high'
-                    },
-                    {
-                        'name': 'Ground Station Intrusion',
-                        'incidents': 18,
-                        'trend': 'decreasing',
-                        'target_systems': ['ground_control', 'mission_control'],
-                        'risk_level': 'medium'
-                    }
-                ]
-            },
-            'mission_security_status': {
-                'chandrayaan-3': {
-                    'status': 'secure',
-                    'events': 1247,
-                    'critical_incidents': 2,
-                    'last_incident': '3 days ago'
-                },
-                'aditya-l1': {
-                    'status': 'monitoring',
-                    'events': 856,
-                    'critical_incidents': 1,
-                    'last_incident': '1 day ago'
-                },
-                'gaganyaan': {
-                    'status': 'secure',
-                    'events': 542,
-                    'critical_incidents': 0,
-                    'last_incident': 'none'
-                }
-            },
-            'recommendations': [
-                {
-                    'priority': 'critical',
-                    'title': 'Enhance Satellite Communication Encryption',
-                    'description': 'Implement quantum-resistant encryption for satellite communications',
-                    'timeline': '30 days',
-                    'impact': 'high'
-                },
-                {
-                    'priority': 'high',
-                    'title': 'Zero-Trust Architecture for Ground Stations',
-                    'description': 'Deploy zero-trust security model across all ground stations',
-                    'timeline': '60 days',
-                    'impact': 'high'
-                },
-                {
-                    'priority': 'medium',
-                    'title': 'Advanced Threat Detection',
-                    'description': 'Implement AI-powered threat detection for space operations',
-                    'timeline': '90 days',
-                    'impact': 'medium'
-                }
-            ],
-            'compliance_status': {
-                'iso_27001': 'compliant',
-                'government_security_standards': 'compliant',
-                'space_security_protocols': 'under_review',
-                'last_audit': '2024-12-15'
-            }
-        }
+        if not statistics and not results:
+            return jsonify({'error': 'No data provided for visualization'}), 400
+        
+        viz_generator = AdvancedVisualizationGenerator()
+        visualizations = viz_generator.generate_comprehensive_visualization(results, {}, statistics)
         
         return jsonify({
             'success': True,
-            'report': report_data,
-            'export_formats': ['pdf', 'excel', 'json'],
-            'generated_at': datetime.now().isoformat()
+            'visualizations': visualizations
         })
-    
+        
     except Exception as e:
-        logger.error(f"Error generating report: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)
         }), 500
 
-@app.route('/api/clarify', methods=['POST'])
-def handle_query_clarification():
-    """Handle ambiguous queries with intelligent clarification"""
+@app.route('/report', methods=['POST'])
+def generate_comprehensive_report():
+    """Generate comprehensive security report"""
     try:
         data = request.json
         query = data.get('query', '')
-        context = data.get('context', {})
+        session_id = data.get('session_id', 'default')
+        report_type = data.get('report_type', 'standard')
         
-        # Analyze query for ambiguity
-        ambiguity_analysis = _analyze_query_ambiguity(query)
+        # Parse query for report generation
+        context = context_manager.get_context(session_id)
+        parsed_data = nlp_parser.parse_query(f"generate comprehensive report {query}", context)
+        parsed_data['intent'] = 'report'
         
-        if ambiguity_analysis['needs_clarification']:
-            return jsonify({
-                'success': True,
-                'needs_clarification': True,
-                'ambiguous_terms': ambiguity_analysis['ambiguous_terms'],
-                'clarification_options': ambiguity_analysis['options'],
-                'suggestions': ambiguity_analysis['suggestions'],
-                'original_query': query
-            })
+        # Generate and execute query
+        es_query = query_generator.generate_query(parsed_data)
+        
+        if es:
+            try:
+                results = es.search(index='logs-*', body=es_query)
+            except Exception as e:
+                results = generate_enhanced_mock_results(parsed_data)
         else:
-            return jsonify({
-                'success': True,
-                'needs_clarification': False,
-                'message': 'Query is sufficiently clear for processing'
-            })
-    
-    except Exception as e:
-        logger.error(f"Error in clarification: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/performance', methods=['GET'])
-def get_performance_metrics():
-    """Get real-time performance metrics"""
-    # Simulate realistic performance data
-    performance_data = {
-        'current_metrics': {
-            'query_response_time': round(random.uniform(0.8, 2.5), 2),
-            'translation_accuracy': random.randint(90, 96),
-            'context_retention': random.randint(95, 99),
-            'active_sessions': random.randint(10, 25),
-            'system_load': {
-                'cpu': random.randint(15, 35),
-                'memory': random.randint(40, 60),
-                'disk_io': random.randint(10, 25)
-            }
-        },
-        'siem_connectivity': {
-            'elastic_siem': {
-                'status': 'online' if random.random() > 0.05 else 'reconnecting',
-                'last_ping': datetime.now().isoformat(),
-                'response_time': round(random.uniform(50, 200), 1)
-            },
-            'wazuh': {
-                'status': 'online' if random.random() > 0.1 else 'offline',
-                'last_ping': datetime.now().isoformat(),
-                'response_time': round(random.uniform(75, 250), 1)
-            }
-        },
-        'trend_data': {
-            'queries_per_hour': [12, 15, 18, 22, 19, 25, 30, 28, 24, 20],
-            'accuracy_trend': [92, 93, 94, 95, 94, 95, 96, 95, 94, 95],
-            'response_time_trend': [1.2, 1.1, 1.3, 1.0, 1.2, 1.1, 1.4, 1.2, 1.1, 1.3]
-        }
-    }
-    
-    return jsonify({
-        'success': True,
-        'timestamp': datetime.now().isoformat(),
-        'performance': performance_data
-    })
-
-@app.route('/api/missions', methods=['GET'])
-def get_mission_contexts():
-    """Get available ISRO mission contexts"""
-    mission_data = {
-        'active_missions': {
-            'chandrayaan-3': {
-                'name': 'Chandrayaan-3 Lunar Mission',
-                'status': 'active',
-                'phase': 'surface_operations',
-                'priority_level': 'critical',
-                'launch_date': '2023-07-14',
-                'key_systems': ['lander', 'rover', 'ground_stations'],
-                'security_classification': 'restricted'
-            },
-            'aditya-l1': {
-                'name': 'Aditya-L1 Solar Observatory',
-                'status': 'active',
-                'phase': 'l1_operations',
-                'priority_level': 'critical',
-                'launch_date': '2023-09-02',
-                'key_systems': ['spacecraft', 'instruments', 'deep_space_network'],
-                'security_classification': 'restricted'
-            },
-            'gaganyaan': {
-                'name': 'Gaganyaan Human Spaceflight',
-                'status': 'development',
-                'phase': 'pre_flight_testing',
-                'priority_level': 'critical',
-                'expected_launch': '2025',
-                'key_systems': ['crew_module', 'life_support', 'abort_systems'],
-                'security_classification': 'confidential'
-            }
-        },
-        'infrastructure': {
-            'ground_stations': [
-                {'name': 'VSSC Thumba', 'location': 'Kerala', 'status': 'operational'},
-                {'name': 'SHAR Sriharikota', 'location': 'Andhra Pradesh', 'status': 'operational'},
-                {'name': 'ISTRAC Hassan', 'location': 'Karnataka', 'status': 'operational'},
-                {'name': 'NRSC Hyderabad', 'location': 'Telangana', 'status': 'operational'}
-            ],
-            'mission_control_centers': [
-                {'name': 'Mission Control Bangalore', 'facility': 'ISAC', 'status': 'operational'},
-                {'name': 'Launch Control SHAR', 'facility': 'SDSC', 'status': 'operational'},
-                {'name': 'Satellite Control Facility', 'facility': 'MCF Hassan', 'status': 'operational'}
-            ]
-        }
-    }
-    
-    return jsonify({
-        'success': True,
-        'missions': mission_data,
-        'last_updated': datetime.now().isoformat()
-    })
-
-def _analyze_query_ambiguity(query: str) -> Dict:
-    """Analyze query for ambiguous terms and suggest clarifications"""
-    ambiguous_patterns = {
-        'unusual activity': {
-            'options': [
-                'Network traffic anomalies',
-                'User behavior anomalies',
-                'System performance anomalies',
-                'Communication pattern anomalies'
-            ],
-            'suggestions': [
-                'Specify the type of activity (network, user, system)',
-                'Include time frame for analysis',
-                'Mention specific systems or missions'
-            ]
-        },
-        'security issues': {
-            'options': [
-                'Authentication failures',
-                'Malware detections',
-                'Network intrusions',
-                'Data breach attempts',
-                'Privilege escalations'
-            ],
-            'suggestions': [
-                'Be specific about the type of security concern',
-                'Include severity level if known',
-                'Mention affected systems or missions'
-            ]
-        },
-        'problems': {
-            'options': [
-                'Critical security alerts',
-                'System failures',
-                'Performance issues',
-                'Communication disruptions'
-            ],
-            'suggestions': [
-                'Describe the specific problem type',
-                'Include impact assessment',
-                'Specify affected systems'
-            ]
-        },
-        'anomalies': {
-            'options': [
-                'Statistical anomalies in data',
-                'Behavioral anomalies in users',
-                'Network traffic anomalies',
-                'Mission timeline anomalies'
-            ],
-            'suggestions': [
-                'Specify the type of anomaly',
-                'Include detection timeframe',
-                'Mention baseline for comparison'
-            ]
-        }
-    }
-    
-    query_lower = query.lower()
-    detected_ambiguities = []
-    
-    for pattern, details in ambiguous_patterns.items():
-        if pattern in query_lower:
-            detected_ambiguities.append({
-                'term': pattern,
-                'options': details['options'],
-                'suggestions': details['suggestions']
-            })
-    
-    return {
-        'needs_clarification': len(detected_ambiguities) > 0,
-        'ambiguous_terms': [amb['term'] for amb in detected_ambiguities],
-        'options': detected_ambiguities[0]['options'] if detected_ambiguities else [],
-        'suggestions': detected_ambiguities[0]['suggestions'] if detected_ambiguities else []
-    }
-
-@app.route('/api/export/<session_id>', methods=['POST'])
-def export_conversation(session_id: str):
-    """Export conversation data in various formats"""
-    try:
-        data = request.json
-        export_format = data.get('format', 'json')
+            results = generate_enhanced_mock_results(parsed_data)
         
-        if session_id not in context_manager.sessions:
-            return jsonify({
-                'success': False,
-                'error': 'Session not found'
-            }), 404
-        
-        session = context_manager.sessions[session_id]
-        
-        export_data = {
-            'session_metadata': {
-                'session_id': session_id,
-                'created_at': session['created_at'],
-                'total_queries': len(session['messages']),
-                'mission_context': session['context']['current_mission']
-            },
-            'conversation_history': session['messages'],
-            'performance_statistics': session['performance_stats'],
-            'context_evolution': session['context'],
-            'export_metadata': {
-                'exported_at': datetime.now().isoformat(),
-                'format': export_format,
-                'version': '2.0'
-            }
-        }
+        # Generate comprehensive report
+        report_response = response_formatter._format_comprehensive_report(results, parsed_data)
         
         return jsonify({
             'success': True,
-            'export_data': export_data,
-            'download_ready': True,
-            'format': export_format
+            'report': report_response
         })
-    
+        
     except Exception as e:
-        logger.error(f"Error exporting conversation: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)
         }), 500
 
-# Error handlers
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({
-        'success': False,
-        'error': 'Endpoint not found',
-        'available_endpoints': [
-            '/api/health',
-            '/api/query',
-            '/api/context/<session_id>',
-            '/api/report/generate',
-            '/api/clarify',
-            '/api/performance',
-            '/api/missions'
-        ]
-    }), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({
-        'success': False,
-        'error': 'Internal server error',
-        'message': 'An unexpected error occurred. Please try again.'
-    }), 500
-
-# Request logging middleware
-@app.before_request
-def log_request():
-    logger.info(f"Request: {request.method} {request.path} - {request.remote_addr}")
-
-@app.after_request
-def log_response(response):
-    logger.info(f"Response: {response.status_code} - {request.path}")
-    return response
+def generate_enhanced_mock_results(parsed_data):
+    """Generate realistic mock data for testing"""
+    mock_hits = []
+    event_type = parsed_data['entities'].get('event_type', 'authentication')
+    num_results = 100
+    
+    # Realistic event types and outcomes
+    event_actions = {
+        'authentication': ['user_login', 'user_logout', 'password_change', 'account_locked'],
+        'malware': ['virus_detected', 'trojan_blocked', 'malware_quarantined', 'suspicious_file'],
+        'network': ['connection_established', 'connection_blocked', 'port_scan', 'traffic_anomaly'],
+        'file_access': ['file_read', 'file_write', 'file_deleted', 'file_moved']
+    }
+    
+    actions = event_actions.get(event_type, ['generic_event'])
+    
+    # Mock IP pools
+    internal_ips = [f'192.168.1.{i}' for i in range(1, 255)]
+    external_ips = [f'203.0.113.{i}' for i in range(1, 100)]
+    
+    users = ['admin', 'jdoe', 'msmith', 'alice.cooper', 'bob.wilson', 'charlie.brown', 'diana.prince']
+    hosts = ['srv-web01', 'srv-db02', 'srv-app03', 'workstation-01', 'firewall-01']
+    
+    for i in range(num_results):
+        timestamp = datetime.now() - timedelta(hours=i//4, minutes=i%60)
+        
+        # Create realistic event patterns
+        is_suspicious = i % 7 == 0  # Make some events suspicious
+        outcome = 'failure' if (is_suspicious or i % 4 == 0) else 'success'
+        
+        hit = {
+            '_source': {
+                '@timestamp': timestamp.isoformat() + 'Z',
+                'event': {
+                    'action': np.random.choice(actions),
+                    'category': event_type,
+                    'outcome': outcome,
+                    'severity': 'high' if is_suspicious else np.random.choice(['low', 'medium', 'high']),
+                    'risk_score': np.random.randint(70, 100) if is_suspicious else np.random.randint(1, 50)
+                },
+                'user': {
+                    'name': np.random.choice(users),
+                    'id': f'uid_{i % 1000}',
+                    'email': f'user{i%10}@company.com'
+                },
+                'source': {
+                    'ip': np.random.choice(external_ips if is_suspicious else internal_ips),
+                    'geo': {
+                        'country_name': np.random.choice(['United States', 'India', 'China', 'Russia', 'Germany']),
+                        'city_name': np.random.choice(['New York', 'Mumbai', 'Beijing', 'Moscow', 'Berlin'])
+                    }
+                },
+                'destination': {
+                    'ip': np.random.choice(internal_ips),
+                    'port': np.random.choice([80, 443, 22, 3389, 1433, 3306])
+                },
+                'host': {
+                    'name': np.random.choice(hosts),
+                    'hostname': f'host-{i%10}.company.local',
+                    'ip': np.random.choice(internal_ips)
+                },
+                'network': {
+                    'protocol': np.random.choice(['tcp', 'udp', 'icmp']),
+                    'bytes': np.random.randint(100, 10000),
+                    'packets': np.random.randint(1, 100)
+                },
+                'process': {
+                    'name': np.random.choice(['svchost.exe', 'chrome.exe', 'outlook.exe', 'powershell.exe']),
+                    'pid': np.random.randint(1000, 9999)
+                },
+                'file': {
+                    'name': f'document_{i}.{np.random.choice(["pdf", "docx", "exe", "zip"])}',
+                    'hash': {'sha256': f'abc123def456{i:04d}'},
+                    'size': np.random.randint(1024, 1048576)
+                },
+                'threat': {
+                    'indicator': {
+                        'type': 'malware' if is_suspicious else 'none',
+                        'confidence': 'high' if is_suspicious else 'low'
+                    }
+                },
+                'authentication': {
+                    'method': 'mfa' if i % 5 == 0 else 'password'
+                }
+            }
+        }
+        mock_hits.append(hit)
+    
+    # Create aggregations
+    aggregations = {
+        'events_over_time': {
+            'buckets': [
+                {'key_as_string': (datetime.now() - timedelta(hours=h)).isoformat(),
+                 'doc_count': np.random.randint(5, 50)}
+                for h in range(24)
+            ]
+        },
+        'top_events': {
+            'buckets': [
+                {'key': action, 'doc_count': np.random.randint(10, 100)}
+                for action in actions
+            ]
+        },
+        'geographic_distribution': {
+            'buckets': [
+                {'key': 'United States', 'doc_count': 45},
+                {'key': 'India', 'doc_count': 23},
+                {'key': 'China', 'doc_count': 12},
+                {'key': 'Russia', 'doc_count': 8},
+                {'key': 'Germany', 'doc_count': 5}
+            ]
+        }
+    }
+    
+    return {
+        'hits': {
+            'total': {'value': num_results},
+            'hits': mock_hits
+        },
+        'aggregations': aggregations
+    }
 
 if __name__ == '__main__':
-    logger.info("Starting Enhanced ISRO SIEM Assistant API")
-    logger.info("Features: NLP Processing, Multi-turn Conversations, ISRO Mission Context")
     app.run(debug=True, host='0.0.0.0', port=5000)
