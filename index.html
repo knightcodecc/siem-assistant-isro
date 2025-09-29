@@ -906,136 +906,108 @@
 
     <script>
         // Application state
-        let sessionId = 'session_' + Date.now();
-        let conversationHistory = [];
-        let activeFilters = {};
-        let advancedMode = false;
+        // Application state
+let sessionId = 'session_' + Date.now();
+let conversationHistory = [];
+let activeFilters = {};
+let advancedMode = false;
 
-        // Initialize application
-        document.addEventListener('DOMContentLoaded', function() {
-            setupEventListeners();
-            setupAutoResize();
-            focusInput();
-        });
+document.addEventListener('DOMContentLoaded', function() {
+    setupEventListeners();
+    setupAutoResize();
+    focusInput();
+});
 
-        function setupEventListeners() {
-            // Enter key handling for textarea
-            document.getElementById('chatInput').addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                }
-            });
-
-            // Filter tag interactions
-            document.querySelectorAll('.filter-tag').forEach(tag => {
-                tag.addEventListener('click', function() {
-                    toggleFilter(this);
-                });
-            });
-        }
-
-        function setupAutoResize() {
-            const textarea = document.getElementById('chatInput');
-            textarea.addEventListener('input', function() {
-                this.style.height = 'auto';
-                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
-            });
-        }
-
-        function focusInput() {
-            document.getElementById('chatInput').focus();
-        }
-
-        function sendQuery(queryText) {
-            document.getElementById('chatInput').value = queryText;
+function setupEventListeners() {
+    document.getElementById('chatInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
             sendMessage();
         }
+    });
+    document.querySelectorAll('.filter-tag').forEach(tag => {
+        tag.addEventListener('click', function() { toggleFilter(this); });
+    });
+}
 
-        function toggleFilter(element) {
-            element.classList.toggle('active');
-            const filterType = element.getAttribute('data-filter');
-            
-            if (element.classList.contains('active')) {
-                activeFilters[filterType] = true;
-            } else {
-                delete activeFilters[filterType];
-            }
-            
-            updateActiveFiltersDisplay();
-        }
+function setupAutoResize() {
+    const textarea = document.getElementById('chatInput');
+    textarea.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
+}
 
-        function updateActiveFiltersDisplay() {
-            // Visual feedback for active filters
-            const activeCount = Object.keys(activeFilters).length;
-            if (activeCount > 0) {
-                document.querySelector('.sidebar-title').textContent = `🔧 Advanced Filters (${activeCount} active)`;
-            } else {
-                document.querySelector('.sidebar-title').textContent = '🔧 Advanced Filters';
-            }
-        }
+function focusInput() { document.getElementById('chatInput').focus(); }
 
-        function toggleAdvancedMode() {
-            advancedMode = !advancedMode;
-            const button = document.querySelector('.advanced-button');
-            
-            if (advancedMode) {
-                button.textContent = 'Simple Mode';
-                button.style.background = 'var(--accent-color)';
-                button.style.color = 'white';
-                showAdvancedOptions();
-            } else {
-                button.textContent = 'Advanced Mode';
-                button.style.background = 'white';
-                button.style.color = 'var(--text-primary)';
-                hideAdvancedOptions();
-            }
-        }
+function sendQuery(queryText) {
+    document.getElementById('chatInput').value = queryText;
+    sendMessage();
+}
 
-        function triggerAnalysis(analysisType) {
-            let query = '';
-            switch(analysisType) {
-                case 'anomaly':
-                    query = 'Perform anomaly detection analysis on recent security events and highlight unusual patterns';
-                    break;
-                case 'correlation':
-                    query = 'Analyze correlations between users, IPs, and events to identify potential attack chains';
-                    break;
-                case 'prediction':
-                    query = 'Generate threat predictions based on current security event trends and patterns';
-                    break;
-                case 'timeline':
-                    query = 'Create a detailed timeline analysis of security events with threat progression mapping';
-                    break;
-            }
-            
-            if (query) {
-                document.getElementById('chatInput').value = query;
-                sendMessage();
-            }
-        }
+function toggleFilter(element) {
+    element.classList.toggle('active');
+    const filterType = element.getAttribute('data-filter');
+    if (element.classList.contains('active')) {
+        activeFilters[filterType] = true;
+    } else {
+        delete activeFilters[filterType];
+    }
+    updateActiveFiltersDisplay();
+}
 
-       // Replace the sendMessage() function in your index.html with this:
+function updateActiveFiltersDisplay() {
+    const activeCount = Object.keys(activeFilters).length;
+    const sidebarTitle = document.querySelector('.sidebar-title');
+    if (activeCount > 0) {
+        sidebarTitle.textContent = `Advanced Filters (${activeCount} active)`;
+    } else {
+        sidebarTitle.textContent = 'Advanced Filters';
+    }
+}
+
+function toggleAdvancedMode() {
+    advancedMode = !advancedMode;
+    const button = document.querySelector('.advanced-button');
+    if (advancedMode) {
+        button.textContent = 'Simple Mode';
+        button.style.background = 'var(--accent-color)';
+        button.style.color = 'white';
+    } else {
+        button.textContent = 'Advanced Mode';
+        button.style.background = 'white';
+        button.style.color = 'var(--text-primary)';
+    }
+}
+
+function triggerAnalysis(analysisType) {
+    const queries = {
+        'anomaly': 'Perform anomaly detection analysis on recent security events and highlight unusual patterns',
+        'correlation': 'Analyze correlations between users, IPs, and events to identify potential attack chains',
+        'prediction': 'Generate threat predictions based on current security event trends and patterns',
+        'timeline': 'Create a detailed timeline analysis of security events with threat progression mapping'
+    };
+    if (queries[analysisType]) {
+        document.getElementById('chatInput').value = queries[analysisType];
+        sendMessage();
+    }
+}
 
 async function sendMessage() {
     const input = document.getElementById('chatInput');
     const sendButton = document.getElementById('sendButton');
     const query = input.value.trim();
-
     if (!query) return;
 
     addUserMessage(query);
-    
     input.value = '';
     input.style.height = 'auto';
     sendButton.disabled = true;
     sendButton.innerHTML = '<div class="loading-spinner"></div>';
 
-    // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     try {
-        // Generate mock response based on query
         const mockResponse = generateMockResponse(query);
         addAssistantMessage(mockResponse);
         updateConfidenceBar(mockResponse.confidence || 0.7);
@@ -1051,19 +1023,22 @@ async function sendMessage() {
 
 function generateMockResponse(query) {
     const queryLower = query.toLowerCase();
-    
-    // Generate realistic mock data based on query keywords
     const mockResults = generateMockResults(queryLower);
     const mockStatistics = generateMockStatistics(mockResults);
     
     let responseText = '';
-    
     if (queryLower.includes('critical') || queryLower.includes('24 hours')) {
         responseText = `Security Analysis Results:\n\nFound 87 security events matching your criteria. Of these, 23 events (26.4%) resulted in failures, indicating potential security concerns. The events involved 12 unique users and originated from 34 distinct IP addresses.\n\nMODERATE CONCERN: The failure rate is elevated and warrants investigation.\n\nAnalysis Period: Last 24 hours`;
     } else if (queryLower.includes('failed') || queryLower.includes('authentication')) {
         responseText = `Authentication Analysis:\n\nDetected 45 failed authentication attempts across the network. Top sources:\n- 192.168.1.105 (15 attempts)\n- 203.0.113.42 (12 attempts)\n- 10.0.0.87 (8 attempts)\n\nGeographic distribution shows attempts from: United States (60%), India (20%), China (15%), Unknown (5%)\n\nRECOMMENDATION: Enable MFA and review access policies for affected accounts.`;
     } else if (queryLower.includes('malware')) {
         responseText = `Malware Detection Report:\n\nIdentified 8 malware-related events in the specified timeframe:\n- 3 Trojan detections on workstations\n- 2 Suspicious file executions\n- 2 C2 communication attempts blocked\n- 1 Ransomware attempt quarantined\n\nAll threats were successfully contained. Affected systems have been isolated for further investigation.`;
+    } else if (queryLower.includes('anomaly') || queryLower.includes('anomalous')) {
+        responseText = `Anomaly Detection Analysis:\n\nML-powered analysis identified 12 anomalous patterns:\n- Unusual login times: 5 instances (off-hours activity)\n- Geographic anomalies: 4 instances (unexpected locations)\n- Volume spikes: 3 instances (data transfer outliers)\n\nTop anomalous users: jdoe, admin, msmith\nRisk score: 67/100 (Medium-High)`;
+    } else if (queryLower.includes('correlation')) {
+        responseText = `Correlation Analysis Results:\n\nIdentified strong correlations between:\n1. Failed logins → VPN connection attempts (0.89 correlation)\n2. File access → Process execution (0.76 correlation)\n3. Network traffic spikes → Authentication failures (0.72 correlation)\n\nPotential attack chain detected: Initial access → Lateral movement → Data exfiltration\n\nRECOMMENDATION: Investigate user accounts with multiple failed authentications followed by successful VPN connections.`;
+    } else if (queryLower.includes('prediction') || queryLower.includes('threat')) {
+        responseText = `Threat Prediction Analysis:\n\nBased on current trends, predicted threats for next 24-48 hours:\n- 78% probability of continued brute force attempts\n- 45% probability of phishing campaign escalation\n- 23% probability of DDoS attack\n\nTrending attack vectors: Credential stuffing, API exploitation\n\nRECOMMENDED ACTIONS:\n1. Strengthen password policies\n2. Enable rate limiting on authentication endpoints\n3. Monitor for suspicious API calls`;
     } else {
         responseText = `Security analysis complete. Found ${mockResults.length} events matching your query criteria. The events show normal security posture with no critical threats detected.\n\nAnalysis Period: ${getTimeRangeFromQuery(queryLower)}`;
     }
@@ -1087,7 +1062,6 @@ function generateMockResponse(query) {
 function generateMockResults(query) {
     const results = [];
     const numResults = Math.floor(Math.random() * 50) + 20;
-    
     const users = ['admin', 'jdoe', 'msmith', 'alice.cooper', 'bob.wilson'];
     const ips = ['192.168.1.100', '192.168.1.105', '203.0.113.42', '10.0.0.87'];
     const events = ['user_login', 'user_logout', 'file_access', 'malware_detected'];
@@ -1106,7 +1080,6 @@ function generateMockResults(query) {
             host: hosts[Math.floor(Math.random() * hosts.length)]
         });
     }
-    
     return results;
 }
 
@@ -1118,7 +1091,6 @@ function generateMockStatistics(results) {
         outcomes: { success: 0, failure: 0 },
         severity: {}
     };
-    
     results.forEach(result => {
         stats.event_types[result.event] = (stats.event_types[result.event] || 0) + 1;
         stats.users[result.user] = (stats.users[result.user] || 0) + 1;
@@ -1126,7 +1098,6 @@ function generateMockStatistics(results) {
         stats.outcomes[result.outcome] = (stats.outcomes[result.outcome] || 0) + 1;
         stats.severity[result.severity] = (stats.severity[result.severity] || 0) + 1;
     });
-    
     return stats;
 }
 
@@ -1137,25 +1108,24 @@ function getTimeRangeFromQuery(query) {
     return 'Last 24 hours';
 }
 
-// Also update these functions to work without backend:
-async function generateVisualization(statisticsJson) {
-    console.log('Visualization feature requires backend server');
+function generateVisualization(statisticsJson) {
+    console.log('Visualization feature - mock mode');
     const vizContent = document.getElementById('vizContent');
-    vizContent.innerHTML = '<p style="padding: 20px; text-align: center;">Visualization generation requires backend server. Currently displaying mock data.</p>';
+    if (vizContent) {
+        vizContent.innerHTML = '<p style="padding: 20px; text-align: center; color: var(--text-secondary);">Advanced visualizations require backend server. In production, this would display interactive charts, network graphs, and geographic maps.</p>';
+    }
 }
 
-async function generateReport(query) {
-    console.log('Report generation feature requires backend server');
-    
+function generateReport(query) {
+    console.log('Report generation - mock mode');
     const mockReport = {
-        executive_summary: 'This is a comprehensive security analysis report. In a production environment with backend server, this would contain detailed analytics, visualizations, and actionable recommendations based on your security data.',
+        executive_summary: `This comprehensive security analysis report covers the query: "${query}". In a production environment with backend server, this would contain detailed analytics, visualizations, and actionable recommendations based on your security data.`,
         metadata: {
             generated_at: new Date().toISOString(),
             total_events: Math.floor(Math.random() * 1000) + 500,
             confidence_score: 0.85
         }
     };
-    
     addReportMessage(mockReport);
 }
 
@@ -1164,466 +1134,312 @@ function exportResults(dataJson) {
 }
 
 function saveToBookmarks(query) {
-    localStorage.setItem('bookmarked_query_' + Date.now(), query);
+    const bookmarks = JSON.parse(localStorage.getItem('siem_bookmarks') || '[]');
+    bookmarks.push({ query: query, timestamp: Date.now() });
+    localStorage.setItem('siem_bookmarks', JSON.stringify(bookmarks));
     alert('Query bookmarked locally!');
 }
 
 function shareResults(query) {
     if (navigator.share) {
-        navigator.share({
-            title: 'SIEM Query Results',
-            text: query
-        });
+        navigator.share({ title: 'SIEM Query Results', text: query });
     } else {
-        alert('Share: ' + query);
+        navigator.clipboard.writeText(query).then(() => {
+            alert('Query copied to clipboard!');
+        }).catch(() => {
+            alert('Share: ' + query);
+        });
     }
 }
 
-        function addUserMessage(text) {
-            const messagesContainer = document.getElementById('chatMessages');
-            removeWelcomeScreen();
-            
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message user';
-            
-            messageDiv.innerHTML = `
-                <div class="message-bubble">
-                    <div class="message-meta">
-                        <span>You</span>
-                        <span>${getCurrentTime()}</span>
-                    </div>
-                    <div>${text}</div>
-                </div>
-            `;
-            
-            messagesContainer.appendChild(messageDiv);
-            scrollToBottom();
-        }
+function addUserMessage(text) {
+    const messagesContainer = document.getElementById('chatMessages');
+    removeWelcomeScreen();
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message user';
+    messageDiv.innerHTML = `
+        <div class="message-bubble">
+            <div class="message-meta">
+                <span>You</span>
+                <span>${getCurrentTime()}</span>
+            </div>
+            <div>${escapeHtml(text)}</div>
+        </div>
+    `;
+    messagesContainer.appendChild(messageDiv);
+    scrollToBottom();
+}
 
-        function addAssistantMessage(data) {
-            const messagesContainer = document.getElementById('chatMessages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message assistant';
-            
-            const confidence = data.confidence || 0.7;
-            const confidenceClass = getConfidenceClass(confidence);
-            const confidenceText = `${(confidence * 100).toFixed(0)}% confidence`;
-            
-            messageDiv.innerHTML = `
-                <div class="message-bubble">
-                    <div class="message-meta">
-                        <span>SIEM Assistant</span>
-                        <span>${getCurrentTime()}</span>
-                        <span class="confidence-badge ${confidenceClass}">${confidenceText}</span>
-                    </div>
-                    <div class="message-content">
-                        <p>${data.response.text}</p>
-                        ${createResultsDisplay(data.response)}
-                        ${createVisualizationPanel(data.response)}
-                        ${createActionButtons(data)}
-                    </div>
-                </div>
-            `;
-            
-            messagesContainer.appendChild(messageDiv);
-            scrollToBottom();
-            
-            // Store in conversation history
-            conversationHistory.push({
-                query: data.parsed_data?.original_query,
-                response: data.response,
-                timestamp: Date.now()
-            });
-        }
+function addAssistantMessage(data) {
+    const messagesContainer = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant';
+    const confidence = data.confidence || 0.7;
+    const confidenceClass = getConfidenceClass(confidence);
+    const confidenceText = `${(confidence * 100).toFixed(0)}% confidence`;
+    
+    messageDiv.innerHTML = `
+        <div class="message-bubble">
+            <div class="message-meta">
+                <span>SIEM Assistant</span>
+                <span>${getCurrentTime()}</span>
+                <span class="confidence-badge ${confidenceClass}">${confidenceText}</span>
+            </div>
+            <div class="message-content">
+                <p style="white-space: pre-wrap;">${escapeHtml(data.response.text)}</p>
+                ${createResultsDisplay(data.response)}
+                ${createVisualizationPanel(data.response)}
+                ${createActionButtons(data)}
+            </div>
+        </div>
+    `;
+    messagesContainer.appendChild(messageDiv);
+    scrollToBottom();
+    conversationHistory.push({
+        query: data.parsed_data?.original_query,
+        response: data.response,
+        timestamp: Date.now()
+    });
+}
 
-        function addErrorMessage(errorText) {
-            const messagesContainer = document.getElementById('chatMessages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message assistant';
-            
-            messageDiv.innerHTML = `
-                <div class="message-bubble" style="border-left: 4px solid var(--danger-color);">
-                    <div class="message-meta">
-                        <span>System Error</span>
-                        <span>${getCurrentTime()}</span>
-                    </div>
-                    <div style="color: var(--danger-color);">
-                        <strong>Error:</strong> ${errorText}
-                    </div>
-                </div>
-            `;
-            
-            messagesContainer.appendChild(messageDiv);
-            scrollToBottom();
-        }
+function addErrorMessage(errorText) {
+    const messagesContainer = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant';
+    messageDiv.innerHTML = `
+        <div class="message-bubble" style="border-left: 4px solid var(--danger-color);">
+            <div class="message-meta">
+                <span>System Error</span>
+                <span>${getCurrentTime()}</span>
+            </div>
+            <div style="color: var(--danger-color);">
+                <strong>Error:</strong> ${escapeHtml(errorText)}
+            </div>
+        </div>
+    `;
+    messagesContainer.appendChild(messageDiv);
+    scrollToBottom();
+}
 
-        function createResultsDisplay(response) {
-            if (!response.results || response.results.length === 0) {
-                return '';
-            }
-
-            // Create statistics dashboard
-            let statsHtml = '';
-            if (response.statistics) {
-                statsHtml = createStatsDashboard(response.statistics);
-            }
-
-            // Create enhanced results table
-            const tableHtml = `
-                <div class="results-container">
-                    <table class="enhanced-table">
-                        <thead>
-                            <tr>
-                                <th>Timestamp</th>
-                                <th>Event Type</th>
-                                <th>User</th>
-                                <th>Source IP</th>
-                                <th>Status</th>
-                                <th>Severity</th>
-                                <th>Host</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${response.results.slice(0, 15).map(result => `
-                                <tr>
-                                    <td>${formatTimestamp(result.timestamp)}</td>
-                                    <td>${result.event || result.category}</td>
-                                    <td>${result.user}</td>
-                                    <td>${result.source_ip}</td>
-                                    <td><span class="threat-indicator ${getThreatClass(result.outcome)}">${result.outcome}</span></td>
-                                    <td><span class="threat-indicator ${getSeverityClass(result.severity)}">${result.severity}</span></td>
-                                    <td>${result.host}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-
-            return statsHtml + tableHtml;
-        }
-
-        function createStatsDashboard(statistics) {
-            const stats = [
-                { 
-                    value: Object.values(statistics.event_types || {}).reduce((a, b) => a + b, 0), 
-                    label: 'Total Events',
-                    trend: 'up'
-                },
-                { 
-                    value: Object.keys(statistics.users || {}).length, 
-                    label: 'Unique Users',
-                    trend: 'neutral'
-                },
-                { 
-                    value: Object.keys(statistics.source_ips || {}).length, 
-                    label: 'Source IPs',
-                    trend: 'down'
-                },
-                { 
-                    value: calculateThreatScore(statistics), 
-                    label: 'Threat Score',
-                    trend: getThreatTrend(statistics)
-                }
-            ];
-
-            return `
-                <div class="stats-dashboard">
-                    ${stats.map(stat => `
-                        <div class="stat-card">
-                            <div class="stat-value">${stat.value}</div>
-                            <div class="stat-label">${stat.label}</div>
-                            <div class="stat-trend trend-${stat.trend}">
-                                ${getTrendIcon(stat.trend)} ${getTrendText(stat.trend)}
-                            </div>
-                        </div>
+function createResultsDisplay(response) {
+    if (!response.results || response.results.length === 0) return '';
+    let statsHtml = '';
+    if (response.statistics) statsHtml = createStatsDashboard(response.statistics);
+    
+    const tableHtml = `
+        <div class="results-container">
+            <table class="enhanced-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Event Type</th>
+                        <th>User</th>
+                        <th>Source IP</th>
+                        <th>Status</th>
+                        <th>Severity</th>
+                        <th>Host</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${response.results.slice(0, 15).map(result => `
+                        <tr>
+                            <td>${formatTimestamp(result.timestamp)}</td>
+                            <td>${escapeHtml(result.event || result.category)}</td>
+                            <td>${escapeHtml(result.user)}</td>
+                            <td>${escapeHtml(result.source_ip)}</td>
+                            <td><span class="threat-indicator ${getThreatClass(result.outcome)}">${escapeHtml(result.outcome)}</span></td>
+                            <td><span class="threat-indicator ${getSeverityClass(result.severity)}">${escapeHtml(result.severity)}</span></td>
+                            <td>${escapeHtml(result.host)}</td>
+                        </tr>
                     `).join('')}
-                </div>
-            `;
+                </tbody>
+            </table>
+        </div>
+    `;
+    return statsHtml + tableHtml;
+}
+
+function createStatsDashboard(statistics) {
+    const stats = [
+        { 
+            value: Object.values(statistics.event_types || {}).reduce((a, b) => a + b, 0), 
+            label: 'Total Events',
+            trend: 'up'
+        },
+        { 
+            value: Object.keys(statistics.users || {}).length, 
+            label: 'Unique Users',
+            trend: 'neutral'
+        },
+        { 
+            value: Object.keys(statistics.source_ips || {}).length, 
+            label: 'Source IPs',
+            trend: 'down'
+        },
+        { 
+            value: calculateThreatScore(statistics), 
+            label: 'Threat Score',
+            trend: getThreatTrend(statistics)
         }
-
-        function createVisualizationPanel(response) {
-            if (!response.statistics) {
-                return '';
-            }
-
-            return `
-                <div class="viz-panel">
-                    <div class="viz-tabs">
-                        <div class="viz-tab active" onclick="switchVizTab(this, 'overview')">Overview</div>
-                        <div class="viz-tab" onclick="switchVizTab(this, 'timeline')">Timeline</div>
-                        <div class="viz-tab" onclick="switchVizTab(this, 'geographic')">Geographic</div>
-                        <div class="viz-tab" onclick="switchVizTab(this, 'network')">Network</div>
-                    </div>
-                    <div class="viz-content" id="vizContent">
-                        <button class="advanced-button" onclick="generateVisualization('${JSON.stringify(response.statistics).replace(/"/g, '&quot;')}')">
-                            Generate Advanced Visualizations
-                        </button>
-                    </div>
-                </div>
-            `;
-        }
-
-        function createActionButtons(data) {
-            return `
-                <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button class="advanced-button" onclick="generateReport('${data.parsed_data?.original_query}')">
-                        Generate Full Report
-                    </button>
-                    <button class="advanced-button" onclick="exportResults('${JSON.stringify(data.response).replace(/"/g, '&quot;')}')">
-                        Export Data
-                    </button>
-                    <button class="advanced-button" onclick="saveToBookmarks('${data.parsed_data?.original_query}')">
-                        Bookmark Query
-                    </button>
-                    <button class="advanced-button" onclick="shareResults('${data.parsed_data?.original_query}')">
-                        Share Results
-                    </button>
-                </div>
-            `;
-        }
-
-        async function generateVisualization(statisticsJson) {
-            try {
-                const statistics = JSON.parse(statisticsJson.replace(/&quot;/g, '"'));
-                
-                const response = await fetch('/visualize', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        statistics: statistics,
-                        results: {}
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.success && data.visualizations) {
-                    displayVisualizations(data.visualizations);
-                } else {
-                    console.error('Visualization generation failed:', data.error);
-                }
-
-            } catch (error) {
-                console.error('Visualization error:', error);
-            }
-        }
-
-        function displayVisualizations(visualizations) {
-            const vizContent = document.getElementById('vizContent');
-            
-            if (visualizations.threat_overview) {
-                vizContent.innerHTML = `<img src="${visualizations.threat_overview}" class="viz-image" alt="Threat Overview Visualization">`;
-            } else if (visualizations.timeline) {
-                vizContent.innerHTML = `<img src="${visualizations.timeline}" class="viz-image" alt="Timeline Visualization">`;
-            } else {
-                vizContent.innerHTML = '<p>Visualizations generated successfully. Check console for details.</p>';
-            }
-        }
-
-        async function generateReport(query) {
-            try {
-                const response = await fetch('/report', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        query: query,
-                        session_id: sessionId,
-                        report_type: 'comprehensive'
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    // Display report in new message
-                    addReportMessage(data.report);
-                } else {
-                    addErrorMessage('Failed to generate report: ' + data.error);
-                }
-
-            } catch (error) {
-                console.error('Report generation error:', error);
-                addErrorMessage('Report generation failed due to network error');
-            }
-        }
-
-        function addReportMessage(report) {
-            const messagesContainer = document.getElementById('chatMessages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message assistant';
-            
-            messageDiv.innerHTML = `
-                <div class="message-bubble">
-                    <div class="message-meta">
-                        <span>SIEM Report Generator</span>
-                        <span>${getCurrentTime()}</span>
-                        <span class="confidence-badge confidence-high">Report Generated</span>
-                    </div>
-                    <div class="message-content">
-                        <h3 style="color: var(--primary-color); margin-bottom: 15px;">Executive Security Report</h3>
-                        <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
-                            <h4>Executive Summary</h4>
-                            <p>${report.executive_summary}</p>
-                        </div>
-                        ${report.visualizations ? '<div><strong>Visualizations included in comprehensive analysis</strong></div>' : ''}
-                        <div style="margin-top: 15px;">
-                            <strong>Report Metadata:</strong><br>
-                            Generated: ${report.metadata?.generated_at}<br>
-                            Total Events Analyzed: ${report.metadata?.total_events?.toLocaleString()}<br>
-                            Confidence Score: ${((report.metadata?.confidence_score || 0.7) * 100).toFixed(0)}%
-                        </div>
+    ];
+    return `
+        <div class="stats-dashboard">
+            ${stats.map(stat => `
+                <div class="stat-card">
+                    <div class="stat-value">${stat.value}</div>
+                    <div class="stat-label">${stat.label}</div>
+                    <div class="stat-trend trend-${stat.trend}">
+                        ${getTrendIcon(stat.trend)} ${getTrendText(stat.trend)}
                     </div>
                 </div>
-            `;
-            
-            messagesContainer.appendChild(messageDiv);
-            scrollToBottom();
-        }
+            `).join('')}
+        </div>
+    `;
+}
 
-        function switchVizTab(tabElement, tabType) {
-            // Remove active class from all tabs
-            document.querySelectorAll('.viz-tab').forEach(tab => tab.classList.remove('active'));
-            
-            // Add active class to clicked tab
-            tabElement.classList.add('active');
-            
-            // Update visualization content based on tab
-            const vizContent = document.getElementById('vizContent');
-            
-            switch(tabType) {
-                case 'overview':
-                    vizContent.innerHTML = '<p>Overview visualization will be displayed here</p>';
-                    break;
-                case 'timeline':
-                    vizContent.innerHTML = '<p>Timeline visualization will be displayed here</p>';
-                    break;
-                case 'geographic':
-                    vizContent.innerHTML = '<p>Geographic distribution will be displayed here</p>';
-                    break;
-                case 'network':
-                    vizContent.innerHTML = '<p>Network topology will be displayed here</p>';
-                    break;
-            }
-        }
+function createVisualizationPanel(response) {
+    if (!response.statistics) return '';
+    return `
+        <div class="viz-panel">
+            <div class="viz-tabs">
+                <div class="viz-tab active" onclick="switchVizTab(this, 'overview')">Overview</div>
+                <div class="viz-tab" onclick="switchVizTab(this, 'timeline')">Timeline</div>
+                <div class="viz-tab" onclick="switchVizTab(this, 'geographic')">Geographic</div>
+                <div class="viz-tab" onclick="switchVizTab(this, 'network')">Network</div>
+            </div>
+            <div class="viz-content" id="vizContent">
+                <button class="advanced-button" onclick="generateVisualization()">
+                    Generate Advanced Visualizations
+                </button>
+            </div>
+        </div>
+    `;
+}
 
-        // Utility functions
-        function removeWelcomeScreen() {
-            const welcome = document.querySelector('.welcome-screen');
-            if (welcome) {
-                welcome.remove();
-            }
-        }
+function createActionButtons(data) {
+    const query = escapeHtml(data.parsed_data?.original_query || '');
+    return `
+        <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+            <button class="advanced-button" onclick="generateReport('${query}')">Generate Full Report</button>
+            <button class="advanced-button" onclick="exportResults()">Export Data</button>
+            <button class="advanced-button" onclick="saveToBookmarks('${query}')">Bookmark Query</button>
+            <button class="advanced-button" onclick="shareResults('${query}')">Share Results</button>
+        </div>
+    `;
+}
 
-        function scrollToBottom() {
-            const messagesContainer = document.getElementById('chatMessages');
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
+function addReportMessage(report) {
+    const messagesContainer = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant';
+    messageDiv.innerHTML = `
+        <div class="message-bubble">
+            <div class="message-meta">
+                <span>SIEM Report Generator</span>
+                <span>${getCurrentTime()}</span>
+                <span class="confidence-badge confidence-high">Report Generated</span>
+            </div>
+            <div class="message-content">
+                <h3 style="color: var(--primary-color); margin-bottom: 15px;">Executive Security Report</h3>
+                <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                    <h4>Executive Summary</h4>
+                    <p>${escapeHtml(report.executive_summary)}</p>
+                </div>
+                <div style="margin-top: 15px;">
+                    <strong>Report Metadata:</strong><br>
+                    Generated: ${new Date(report.metadata?.generated_at).toLocaleString()}<br>
+                    Total Events Analyzed: ${report.metadata?.total_events?.toLocaleString()}<br>
+                    Confidence Score: ${((report.metadata?.confidence_score || 0.7) * 100).toFixed(0)}%
+                </div>
+            </div>
+        </div>
+    `;
+    messagesContainer.appendChild(messageDiv);
+    scrollToBottom();
+}
 
-        function getCurrentTime() {
-            return new Date().toLocaleTimeString('en-US', { 
-                hour12: false, 
-                hour: '2-digit', 
-                minute: '2-digit' 
-            });
-        }
+function switchVizTab(tabElement, tabType) {
+    document.querySelectorAll('.viz-tab').forEach(tab => tab.classList.remove('active'));
+    tabElement.classList.add('active');
+    const vizContent = document.getElementById('vizContent');
+    const messages = {
+        'overview': 'Overview visualization would display comprehensive security metrics',
+        'timeline': 'Timeline visualization would show event progression over time',
+        'geographic': 'Geographic map would display threat distribution by location',
+        'network': 'Network graph would visualize relationships and attack paths'
+    };
+    vizContent.innerHTML = `<p style="padding: 20px; text-align: center; color: var(--text-secondary);">${messages[tabType]}</p>`;
+}
 
-        function formatTimestamp(timestamp) {
-            if (!timestamp || timestamp === 'N/A') return 'N/A';
-            const date = new Date(timestamp);
-            return date.toLocaleString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        }
+function removeWelcomeScreen() {
+    const welcome = document.querySelector('.welcome-screen');
+    if (welcome) welcome.remove();
+}
 
-        function getConfidenceClass(confidence) {
-            if (confidence > 0.8) return 'confidence-high';
-            if (confidence > 0.6) return 'confidence-medium';
-            return 'confidence-low';
-        }
+function scrollToBottom() {
+    const messagesContainer = document.getElementById('chatMessages');
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
 
-        function getThreatClass(outcome) {
-            switch(outcome) {
-                case 'failure': return 'threat-high';
-                case 'success': return 'threat-low';
-                default: return 'threat-medium';
-            }
-        }
+function getCurrentTime() {
+    return new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+}
 
-        function getSeverityClass(severity) {
-            switch(severity) {
-                case 'critical': return 'threat-high';
-                case 'high': return 'threat-high';
-                case 'medium': return 'threat-medium';
-                case 'low': return 'threat-low';
-                default: return 'threat-medium';
-            }
-        }
+function formatTimestamp(timestamp) {
+    if (!timestamp || timestamp === 'N/A') return 'N/A';
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 
-        function updateConfidenceBar(confidence) {
-            const bar = document.getElementById('confidenceBar');
-            const text = document.getElementById('confidenceText');
-            
-            bar.style.width = (confidence * 100) + '%';
-            text.textContent = `${(confidence * 100).toFixed(0)}% Confidence`;
-        }
+function getConfidenceClass(confidence) {
+    if (confidence > 0.8) return 'confidence-high';
+    if (confidence > 0.6) return 'confidence-medium';
+    return 'confidence-low';
+}
 
-        function calculateThreatScore(statistics) {
-            const failures = statistics.outcomes?.failure || 0;
-            const total = Object.values(statistics.outcomes || {}).reduce((a, b) => a + b, 1);
-            return Math.round((failures / total) * 100);
-        }
+function getThreatClass(outcome) {
+    if (outcome === 'failure') return 'threat-high';
+    if (outcome === 'success') return 'threat-low';
+    return 'threat-medium';
+}
 
-        function getThreatTrend(statistics) {
-            const threatScore = calculateThreatScore(statistics);
-            return threatScore > 50 ? 'up' : threatScore < 20 ? 'down' : 'neutral';
-        }
+function getSeverityClass(severity) {
+    if (severity === 'critical' || severity === 'high') return 'threat-high';
+    if (severity === 'medium') return 'threat-medium';
+    return 'threat-low';
+}
 
-        function getTrendIcon(trend) {
-            switch(trend) {
-                case 'up': return '↗';
-                case 'down': return '↘';
-                default: return '→';
-            }
-        }
+function updateConfidenceBar(confidence) {
+    const bar = document.getElementById('confidenceBar');
+    const text = document.getElementById('confidenceText');
+    bar.style.width = (confidence * 100) + '%';
+    text.textContent = `${(confidence * 100).toFixed(0)}% Confidence`;
+}
 
-        function getTrendText(trend) {
-            switch(trend) {
-                case 'up': return 'Increasing';
-                case 'down': return 'Decreasing';
-                default: return 'Stable';
-            }
-        }
+function calculateThreatScore(statistics) {
+    const failures = statistics.outcomes?.failure || 0;
+    const total = Object.values(statistics.outcomes || {}).reduce((a, b) => a + b, 1);
+    return Math.round((failures / total) * 100);
+}
 
-        // Placeholder functions for additional features
-        function exportResults(dataJson) {
-            console.log('Export functionality would be implemented here');
-        }
+function getThreatTrend(statistics) {
+    const threatScore = calculateThreatScore(statistics);
+    return threatScore > 50 ? 'up' : threatScore < 20 ? 'down' : 'neutral';
+}
 
-        function saveToBookmarks(query) {
-            console.log('Bookmark functionality would be implemented here');
-        }
+function getTrendIcon(trend) {
+    return trend === 'up' ? '↗' : trend === 'down' ? '↘' : '→';
+}
 
-        function shareResults(query) {
-            console.log('Share functionality would be implemented here');
-        }
+function getTrendText(trend) {
+    return trend === 'up' ? 'Increasing' : trend === 'down' ? 'Decreasing' : 'Stable';
+}
 
-        function showAdvancedOptions() {
-            // Implementation for advanced mode UI changes
-            console.log('Advanced mode activated');
-        }
-
-        function hideAdvancedOptions() {
-            // Implementation for simple mode UI changes
-            console.log('Simple mode activated');
-        }
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
     </script>
 </body>
 </html>
