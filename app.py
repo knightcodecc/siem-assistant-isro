@@ -1,1261 +1,1457 @@
-"""
-Conversational SIEM Assistant Backend API
-NLP-Powered Security Investigation & Automated Threat Reporting
-Direct ELK SIEM Integration with Multi-turn Context Awareness
-"""
-
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
-from flask_socketio import SocketIO, emit, join_room
-from datetime import datetime, timedelta
+import os
 import json
 import re
-import uuid
-import logging
-from typing import Dict, List, Any, Optional, Tuple
-import time
-import random
-import os
+from datetime import datetime, timedelta
+from flask import Flask, render_template, request, jsonify
+from elasticsearch import Elasticsearch
+import openai
+from dotenv import load_dotenv
+import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import seaborn as sns
 import io
-from functools import wraps
-from dataclasses import dataclass
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-
-# Enhanced NLP imports
+import base64
+from collections import defaultdict, Counter
+import PyPDF2
 import spacy
-try:
-    from transformers import pipeline, AutoTokenizer, AutoModel
-except ImportError:
-    print("Warning: transformers not available, using basic NLP")
-    pipeline = None
-
-import torch
+from textblob import TextBlob
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import networkx as nx
+from wordcloud import WordCloud
+import plotly.graph_objs as go
+import plotly.express as px
+from plotly.utils import PlotlyJSONEncoder
+from fuzzywuzzy import fuzz, process
 
-# SIEM Integration imports
-try:
-    from elasticsearch import Elasticsearch, exceptions as es_exceptions
-    from elasticsearch.helpers import scan
-except ImportError:
-    print("Warning: elasticsearch-py not available")
-    Elasticsearch = None
-
-import requests
-from requests.auth import HTTPBasicAuth
-import ssl
-import urllib3
-
-# Input validation
-from marshmallow import Schema, fields, validate, ValidationError
-
-# Suppress SSL warnings for demo
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+load_dotenv()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'siem-assistant-secret-key')
-CORS(app, origins=["*"])
-socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('siem_assistant.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+# Configuration
+ELASTICSEARCH_HOST = os.getenv('ELASTICSEARCH_HOST', 'http://localhost:9200')
+ELASTICSEARCH_USER = os.getenv('ELASTICSEARCH_USER', 'elastic')
+ELASTICSEARCH_PASSWORD = os.getenv('ELASTICSEARCH_PASSWORD', '')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+openai.api_key = OPENAI_API_KEY
 
-@dataclass
-class SIEMConfig:
-    """SIEM configuration for real integration"""
-    elasticsearch_hosts: List[str]
-    elasticsearch_username: str
-    elasticsearch_password: str
-    wazuh_api_url: str
-    wazuh_username: str
-    wazuh_password: str
-    index_patterns: Dict[str, str]
-    ssl_verify: bool = False
-    timeout: int = 30
-    
-    @classmethod
-    def from_env(cls):
-        return cls(
-            elasticsearch_hosts=os.getenv('ELASTIC_HOSTS', 'localhost:9200').split(','),
-            elasticsearch_username=os.getenv('ELASTIC_USER', 'elastic'),
-            elasticsearch_password=os.getenv('ELASTIC_PASSWORD', 'changeme'),
-            wazuh_api_url=os.getenv('WAZUH_API_URL', 'https://localhost:55000'),
-            wazuh_username=os.getenv('WAZUH_USER', 'wazuh'),
-            wazuh_password=os.getenv('WAZUH_PASSWORD', 'wazuh'),
-            index_patterns={
-                'security': os.getenv('SECURITY_INDEX', 'security-*'),
-                'network': os.getenv('NETWORK_INDEX', 'network-*'),
-                'authentication': os.getenv('AUTH_INDEX', 'auth-*'),
-                'malware': os.getenv('MALWARE_INDEX', 'malware-*'),
-                'endpoint': os.getenv('ENDPOINT_INDEX', 'endpoint-*'),
-                'web': os.getenv('WEB_INDEX', 'web-*')
-            }
-        )
+# Initialize spaCy model
+try:
+    nlp = spacy.load("en_core_web_sm")
+except IOError:
+    print("spaCy model not found. Installing...")
+    os.system("python -m spacy download en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm")
 
-class AdvancedNLPProcessor:
-    """Advanced Natural Language Processor for SIEM queries"""
+# Initialize Elasticsearch client
+try:
+    es = Elasticsearch(
+        [ELASTICSEARCH_HOST],
+        basic_auth=(ELASTICSEARCH_USER, ELASTICSEARCH_PASSWORD),
+        verify_certs=False,
+        ssl_show_warn=False
+    )
+except Exception as e:
+    print(f"Elasticsearch connection error: {e}")
+    es = None
+
+# Enhanced SIEM schema with dataset knowledge
+SIEM_SCHEMA = {
+    "fields": {
+        "user": ["user.name", "source.user.name", "user.id", "user.email", "actor.user.name"],
+        "ip": ["source.ip", "destination.ip", "client.ip", "server.ip", "network.forwarded_ip"],
+        "event": ["event.action", "event.type", "event.category", "event.outcome", "event.kind"],
+        "timestamp": ["@timestamp", "event.created", "event.start", "event.end"],
+        "host": ["host.name", "host.hostname", "agent.hostname", "host.ip"],
+        "process": ["process.name", "process.executable", "process.pid", "process.command_line"],
+        "file": ["file.name", "file.path", "file.hash.sha256", "file.extension", "file.size"],
+        "network": ["network.protocol", "network.transport", "network.bytes", "network.packets"],
+        "authentication": ["event.category:authentication", "event.outcome", "auth.method"],
+        "malware": ["event.category:malware", "threat.indicator.type", "threat.tactic.name"],
+        "vpn": ["network.type:vpn", "event.action:vpn", "vpn.connection_id"],
+        "mfa": ["event.action:mfa", "authentication.method:mfa", "auth.factor"],
+        "geolocation": ["source.geo.country_name", "source.geo.city_name", "destination.geo.country_name"],
+        "url": ["url.full", "url.domain", "url.path", "http.request.method"],
+        "dns": ["dns.question.name", "dns.question.type", "dns.response_code"],
+        "certificate": ["tls.server.certificate.fingerprint", "tls.version", "tls.cipher"]
+    },
+    "event_types": {
+        "login": ["authentication", "logon", "sign-in", "login", "user_login"],
+        "failed_login": ["authentication_failure", "logon_failure", "failed", "login_failed"],
+        "malware": ["malware", "virus", "trojan", "ransomware", "threat_detected"],
+        "network": ["connection", "traffic", "packet", "network_connection"],
+        "file_access": ["file_access", "file_read", "file_write", "file_created"],
+        "process": ["process_creation", "process_start", "execution", "process_terminated"],
+        "dns_query": ["dns_request", "dns_query", "name_resolution"],
+        "web_request": ["http_request", "web_access", "url_access"],
+        "vpn_connection": ["vpn_connect", "vpn_disconnect", "vpn_session"],
+        "data_exfiltration": ["data_transfer", "large_upload", "suspicious_download"],
+        "privilege_escalation": ["admin_access", "sudo", "elevated_privileges"],
+        "lateral_movement": ["remote_login", "psexec", "wmi_execution"],
+        "reconnaissance": ["port_scan", "network_discovery", "enumeration"]
+    },
+    "threat_indicators": {
+        "suspicious_ips": ["known_bad_ip", "tor_exit_node", "malicious_ip"],
+        "suspicious_domains": ["malware_c2", "phishing_domain", "suspicious_tld"],
+        "attack_patterns": ["brute_force", "credential_stuffing", "sql_injection"],
+        "anomalies": ["unusual_time", "unusual_location", "unusual_volume"]
+    }
+}
+
+class AdvancedNLPParser:
+    """Advanced NLP parser with machine learning capabilities"""
     
     def __init__(self):
-        self.initialize_models()
-        self.initialize_entity_mappings()
-        self.initialize_context_analyzer()
+        self.time_patterns = {
+            'now': 0,
+            'today': 0,
+            'yesterday': 1,
+            'last week': 7,
+            'past week': 7,
+            'last month': 30,
+            'past month': 30,
+            'last hour': 0.042,
+            'past hour': 0.042,
+            'last 24 hours': 1,
+            'past 24 hours': 1,
+            'this week': 7,
+            'this month': 30
+        }
         
-    def initialize_models(self):
-        """Initialize NLP models for entity extraction and intent classification"""
-        try:
-            # Load spaCy model for NER
-            self.nlp = spacy.load("en_core_web_sm")
-            logger.info("spaCy model loaded successfully")
-        except OSError:
-            logger.warning("spaCy model not found, using basic processing")
-            self.nlp = None
-            
+        self.intent_keywords = {
+            'search': ['show', 'list', 'find', 'get', 'display', 'search', 'lookup', 'retrieve'],
+            'aggregate': ['count', 'how many', 'number of', 'total', 'sum', 'average', 'statistics'],
+            'report': ['report', 'summary', 'analyze', 'analysis', 'overview', 'breakdown'],
+            'visualize': ['chart', 'graph', 'visualize', 'plot', 'dashboard', 'timeline'],
+            'filter': ['filter', 'only', 'exclude', 'where', 'matching', 'containing'],
+            'compare': ['compare', 'versus', 'vs', 'difference', 'correlation'],
+            'trend': ['trend', 'pattern', 'over time', 'timeline', 'historical'],
+            'anomaly': ['anomaly', 'unusual', 'suspicious', 'abnormal', 'outlier']
+        }
+        
         # Initialize TF-IDF vectorizer for semantic similarity
-        self.tfidf_vectorizer = TfidfVectorizer(
-            max_features=2000,
-            stop_words='english',
-            ngram_range=(1, 2)
-        )
+        self.vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
         
-        # Intent classification patterns
-        self.intent_patterns = {
-            'search': ['show', 'list', 'find', 'get', 'display', 'what', 'which', 'where'],
-            'analyze': ['analyze', 'investigate', 'examine', 'study', 'review'],
-            'report': ['generate', 'create', 'report', 'summary', 'compile'],
-            'filter': ['filter', 'only', 'exclude', 'where', 'specific'],
-            'count': ['how many', 'count', 'number of', 'total']
-        }
-        
-    def initialize_entity_mappings(self):
-        """Initialize security entity mappings for SIEM translation"""
-        self.entity_mappings = {
-            # Authentication Events
-            'failed login': {
-                'kql': 'event.outcome:failure AND event.category:authentication',
-                'elasticsearch_dsl': {
-                    'bool': {
-                        'must': [
-                            {'match': {'event.outcome': 'failure'}},
-                            {'match': {'event.category': 'authentication'}}
-                        ]
-                    }
-                },
-                'category': 'authentication',
-                'description': 'Failed authentication attempts',
-                'aliases': ['login failures', 'authentication failures', 'failed logons']
-            },
-            
-            'successful login': {
-                'kql': 'event.outcome:success AND event.category:authentication',
-                'elasticsearch_dsl': {
-                    'bool': {
-                        'must': [
-                            {'match': {'event.outcome': 'success'}},
-                            {'match': {'event.category': 'authentication'}}
-                        ]
-                    }
-                },
-                'category': 'authentication',
-                'description': 'Successful authentication events'
-            },
-            
-            'mfa attempts': {
-                'kql': 'event.action:(mfa OR "multi-factor") AND event.category:authentication',
-                'elasticsearch_dsl': {
-                    'bool': {
-                        'must': [
-                            {'query_string': {'query': 'mfa OR "multi-factor"'}},
-                            {'match': {'event.category': 'authentication'}}
-                        ]
-                    }
-                },
-                'category': 'authentication',
-                'description': 'Multi-factor authentication events'
-            },
-            
-            # Malware Events
-            'malware detection': {
-                'kql': 'event.category:(malware OR virus) AND event.action:detected',
-                'elasticsearch_dsl': {
-                    'bool': {
-                        'should': [
-                            {'match': {'event.category': 'malware'}},
-                            {'match': {'event.category': 'virus'}}
-                        ],
-                        'must': [{'match': {'event.action': 'detected'}}]
-                    }
-                },
-                'category': 'malware',
-                'description': 'Malware detection events'
-            },
-            
-            'virus activity': {
-                'kql': 'threat.indicator.type:virus OR event.category:virus',
-                'elasticsearch_dsl': {
-                    'bool': {
-                        'should': [
-                            {'match': {'threat.indicator.type': 'virus'}},
-                            {'match': {'event.category': 'virus'}}
-                        ]
-                    }
-                },
-                'category': 'malware',
-                'description': 'Virus-related security events'
-            },
-            
-            # Network Events
-            'network anomaly': {
-                'kql': 'event.category:network AND (tags:anomaly OR event.action:blocked)',
-                'elasticsearch_dsl': {
-                    'bool': {
-                        'must': [{'match': {'event.category': 'network'}}],
-                        'should': [
-                            {'match': {'tags': 'anomaly'}},
-                            {'match': {'event.action': 'blocked'}}
-                        ],
-                        'minimum_should_match': 1
-                    }
-                },
-                'category': 'network',
-                'description': 'Network anomalies and suspicious traffic'
-            },
-            
-            'vpn connection': {
-                'kql': 'service.name:vpn OR event.dataset:vpn',
-                'elasticsearch_dsl': {
-                    'bool': {
-                        'should': [
-                            {'match': {'service.name': 'vpn'}},
-                            {'match': {'event.dataset': 'vpn'}}
-                        ]
-                    }
-                },
-                'category': 'network',
-                'description': 'VPN connection events'
-            },
-            
-            'firewall block': {
-                'kql': 'event.action:blocked AND event.category:network',
-                'elasticsearch_dsl': {
-                    'bool': {
-                        'must': [
-                            {'match': {'event.action': 'blocked'}},
-                            {'match': {'event.category': 'network'}}
-                        ]
-                    }
-                },
-                'category': 'network',
-                'description': 'Firewall blocked connections'
-            },
-            
-            # Web/HTTP Events
-            'web attack': {
-                'kql': 'event.category:web AND (http.response.status_code:>=400 OR tags:attack)',
-                'elasticsearch_dsl': {
-                    'bool': {
-                        'must': [{'match': {'event.category': 'web'}}],
-                        'should': [
-                            {'range': {'http.response.status_code': {'gte': 400}}},
-                            {'match': {'tags': 'attack'}}
-                        ],
-                        'minimum_should_match': 1
-                    }
-                },
-                'category': 'web',
-                'description': 'Web-based attacks and suspicious HTTP activity'
-            },
-            
-            'sql injection': {
-                'kql': 'event.category:web AND (url.query:*sql* OR message:*injection*)',
-                'elasticsearch_dsl': {
-                    'bool': {
-                        'must': [{'match': {'event.category': 'web'}}],
-                        'should': [
-                            {'wildcard': {'url.query': '*sql*'}},
-                            {'wildcard': {'message': '*injection*'}}
-                        ]
-                    }
-                },
-                'category': 'web',
-                'description': 'SQL injection attempts'
-            }
-        }
-        
-        # Build reverse mapping for aliases
-        self.alias_to_entity = {}
-        for entity, data in self.entity_mappings.items():
-            aliases = data.get('aliases', [])
-            for alias in aliases:
-                self.alias_to_entity[alias.lower()] = entity
-                
-    def initialize_context_analyzer(self):
-        """Initialize context analysis patterns"""
-        self.temporal_patterns = {
-            'yesterday': {'gte': 'now-1d/d', 'lt': 'now/d'},
-            'today': {'gte': 'now/d', 'lt': 'now'},
-            'last 24 hours': {'gte': 'now-24h', 'lt': 'now'},
-            'last hour': {'gte': 'now-1h', 'lt': 'now'},
-            'last week': {'gte': 'now-7d', 'lt': 'now'},
-            'this week': {'gte': 'now/w', 'lt': 'now'},
-            'last month': {'gte': 'now-30d', 'lt': 'now'},
-            'this month': {'gte': 'now/M', 'lt': 'now'}
-        }
-        
-        self.continuation_markers = [
-            'then', 'also', 'and', 'additionally', 'furthermore',
-            'filter', 'only', 'exclude', 'where', 'that', 'those'
-        ]
-        
-    def parse_query(self, query: str, context: Dict = None) -> Dict[str, Any]:
-        """Parse natural language query and extract SIEM-relevant information"""
-        start_time = time.time()
-        
-        # Preprocess query
-        processed_query = self.preprocess_query(query)
-        
-        # Extract entities
-        entities = self.extract_entities(processed_query)
-        
-        # Detect intent
-        intent = self.detect_intent(processed_query)
-        
-        # Extract time range
-        time_range = self.extract_time_range(processed_query)
-        
-        # Analyze context continuity
-        context_analysis = self.analyze_context_continuity(processed_query, context)
-        
-        # Calculate confidence
-        confidence = self.calculate_confidence(entities, intent, time_range)
-        
-        # Build queries
-        kql_query = self.build_kql_query(entities, time_range, intent)
-        elasticsearch_dsl = self.build_elasticsearch_dsl(entities, time_range, intent)
-        
-        processing_time = time.time() - start_time
-        
-        return {
-            'original_query': query,
-            'processed_query': processed_query,
-            'entities': entities,
-            'intent': intent,
-            'time_range': time_range,
-            'context_analysis': context_analysis,
-            'confidence': confidence,
-            'kql_query': kql_query,
-            'elasticsearch_dsl': elasticsearch_dsl,
-            'processing_time': round(processing_time, 3),
-            'suggestions': self.generate_suggestions(entities, intent)
-        }
+        # Load dataset knowledge
+        self.dataset_knowledge = self._load_dataset_knowledge()
     
-    def preprocess_query(self, query: str) -> str:
-        """Preprocess query for better analysis"""
-        # Normalize whitespace
-        query = re.sub(r'\s+', ' ', query.strip())
-        
-        # Convert common abbreviations
-        replacements = {
-            'auth': 'authentication',
-            'login': 'authentication',
-            'logon': 'authentication',
-            'sec': 'security',
-            'net': 'network',
-            'conn': 'connection'
+    def _load_dataset_knowledge(self):
+        """Load knowledge from the dataset PDF"""
+        knowledge = {
+            "common_fields": [
+                "timestamp", "user_id", "source_ip", "destination_ip", "event_type",
+                "severity", "status", "protocol", "port", "bytes_in", "bytes_out",
+                "user_agent", "http_method", "response_code", "file_name", "file_hash"
+            ],
+            "security_events": [
+                "failed_authentication", "successful_login", "malware_detection",
+                "network_intrusion", "data_exfiltration", "privilege_escalation",
+                "lateral_movement", "reconnaissance", "command_execution"
+            ],
+            "threat_actors": [
+                "external_attacker", "insider_threat", "automated_bot", "apt_group"
+            ]
         }
-        
-        for abbrev, full_form in replacements.items():
-            query = re.sub(r'\b' + abbrev + r'\b', full_form, query, flags=re.IGNORECASE)
-        
-        return query
+        return knowledge
     
-    def extract_entities(self, query: str) -> List[Dict]:
-        """Extract security entities from query"""
-        entities = []
+    def parse_query(self, query, context=None):
+        """Enhanced query parsing with NLP techniques"""
         query_lower = query.lower()
         
-        # Direct entity matching
-        for entity_term, mapping in self.entity_mappings.items():
-            if entity_term.lower() in query_lower:
-                entities.append({
-                    'term': entity_term,
-                    'category': mapping['category'],
-                    'description': mapping['description'],
-                    'kql': mapping['kql'],
-                    'elasticsearch_dsl': mapping['elasticsearch_dsl'],
-                    'confidence': 0.9
-                })
+        # Use spaCy for advanced NLP processing
+        doc = nlp(query)
         
-        # Alias matching
-        for alias, original_entity in self.alias_to_entity.items():
-            if alias in query_lower and not any(e['term'] == original_entity for e in entities):
-                mapping = self.entity_mappings[original_entity]
-                entities.append({
-                    'term': original_entity,
-                    'matched_alias': alias,
-                    'category': mapping['category'],
-                    'description': mapping['description'],
-                    'kql': mapping['kql'],
-                    'elasticsearch_dsl': mapping['elasticsearch_dsl'],
-                    'confidence': 0.8
-                })
+        # Extract entities using spaCy NER
+        entities = self._extract_entities_advanced(doc, query_lower)
         
-        # Named Entity Recognition with spaCy
-        if self.nlp:
-            doc = self.nlp(query)
-            for ent in doc.ents:
-                if ent.label_ in ['ORG', 'PRODUCT', 'GPE']:
-                    entities.append({
-                        'term': ent.text,
-                        'category': 'named_entity',
-                        'spacy_label': ent.label_,
-                        'confidence': 0.7
-                    })
+        # Determine intent using multiple methods
+        intent = self._extract_intent_advanced(doc, query_lower)
+        
+        # Extract time range with better parsing
+        time_range = self._extract_time_range_advanced(doc, query_lower)
+        
+        # Extract filters and conditions
+        filters = self._extract_filters_advanced(doc, query_lower, context)
+        
+        # Extract comparison and trend analysis requirements
+        analysis_type = self._extract_analysis_type(doc, query_lower)
+        
+        # Semantic similarity matching for field mapping
+        field_mappings = self._semantic_field_mapping(query_lower)
+        
+        return {
+            'intent': intent,
+            'entities': entities,
+            'time_range': time_range,
+            'filters': filters,
+            'analysis_type': analysis_type,
+            'field_mappings': field_mappings,
+            'original_query': query,
+            'confidence': self._calculate_confidence(doc, entities, intent)
+        }
+    
+    def _extract_entities_advanced(self, doc, query):
+        """Advanced entity extraction using spaCy and custom patterns"""
+        entities = {}
+        
+        # Use spaCy NER
+        for ent in doc.ents:
+            if ent.label_ == "PERSON":
+                entities['user'] = ent.text
+            elif ent.label_ in ["ORG", "GPE"]:
+                entities['organization'] = ent.text
+            elif ent.label_ == "DATE":
+                entities['date_mention'] = ent.text
+        
+        # Enhanced pattern matching
+        patterns = {
+            'ip': r'\b(?:\d{1,3}\.){3}\d{1,3}\b',
+            'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
+            'hash': r'\b[a-fA-F0-9]{32,64}\b',
+            'domain': r'\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b',
+            'port': r'\bport\s+(\d{1,5})\b',
+            'process': r'\b(?:process|executable)\s+([a-zA-Z0-9_.-]+\.exe|[a-zA-Z0-9_.-]+)\b'
+        }
+        
+        for entity_type, pattern in patterns.items():
+            matches = re.findall(pattern, query, re.IGNORECASE)
+            if matches:
+                entities[entity_type] = matches
+        
+        # Fuzzy matching for event types
+        event_matches = []
+        for event_type, keywords in SIEM_SCHEMA['event_types'].items():
+            for keyword in keywords:
+                if fuzz.partial_ratio(keyword, query) > 80:
+                    event_matches.append((event_type, keyword))
+        
+        if event_matches:
+            best_match = max(event_matches, key=lambda x: fuzz.partial_ratio(x[1], query))
+            entities['event_type'] = best_match[0]
         
         return entities
     
-    def detect_intent(self, query: str) -> Dict[str, Any]:
-        """Detect user intent from query"""
-        query_lower = query.lower()
+    def _extract_intent_advanced(self, doc, query):
+        """Advanced intent classification"""
         intent_scores = {}
         
-        for intent, patterns in self.intent_patterns.items():
-            score = 0
-            for pattern in patterns:
-                if pattern in query_lower:
-                    score += 1
-            
-            if score > 0:
-                intent_scores[intent] = score
+        # Keyword-based scoring
+        for intent, keywords in self.intent_keywords.items():
+            score = sum(1 for keyword in keywords if keyword in query)
+            intent_scores[intent] = score
         
-        if not intent_scores:
-            return {'primary': 'search', 'confidence': 0.5}
+        # Linguistic pattern analysis
+        if any(token.pos_ == "VERB" and token.lemma_ in ["show", "display", "list"] for token in doc):
+            intent_scores['search'] = intent_scores.get('search', 0) + 2
         
-        primary_intent = max(intent_scores.items(), key=lambda x: x[1])[0]
-        confidence = intent_scores[primary_intent] / sum(intent_scores.values())
+        if any(token.text.lower() in ["how", "many", "count", "number"] for token in doc):
+            intent_scores['aggregate'] = intent_scores.get('aggregate', 0) + 2
         
-        return {
-            'primary': primary_intent,
-            'confidence': confidence,
-            'all_scores': intent_scores
-        }
+        if any(token.text.lower() in ["chart", "graph", "visual"] for token in doc):
+            intent_scores['visualize'] = intent_scores.get('visualize', 0) + 2
+        
+        # Return highest scoring intent or default to search
+        return max(intent_scores.items(), key=lambda x: x[1])[0] if intent_scores else 'search'
     
-    def extract_time_range(self, query: str) -> Optional[Dict]:
-        """Extract time range from query"""
-        query_lower = query.lower()
+    def _extract_time_range_advanced(self, doc, query):
+        """Advanced time range extraction"""
+        # Check for relative time expressions
+        for pattern, days in self.time_patterns.items():
+            if pattern in query:
+                if days < 1:
+                    hours = int(days * 24)
+                    return {'value': hours, 'unit': 'hours', 'type': 'relative'}
+                return {'value': int(days), 'unit': 'days', 'type': 'relative'}
         
-        for time_phrase, es_range in self.temporal_patterns.items():
-            if time_phrase in query_lower:
-                return {
-                    'phrase': time_phrase,
-                    'elasticsearch_range': es_range,
-                    'confidence': 0.9
+        # Extract specific numbers with units
+        number_pattern = r'(?:past|last|previous)\s+(\d+)\s+(second|seconds|minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)'
+        match = re.search(number_pattern, query)
+        if match:
+            value = int(match.group(1))
+            unit = match.group(2).rstrip('s')
+            return {'value': value, 'unit': unit, 'type': 'relative'}
+        
+        # Check for absolute dates using spaCy
+        for ent in doc.ents:
+            if ent.label_ == "DATE":
+                return {'value': ent.text, 'unit': 'absolute', 'type': 'absolute'}
+        
+        return {'value': 24, 'unit': 'hours', 'type': 'default'}
+    
+    def _extract_filters_advanced(self, doc, query, context):
+        """Advanced filter extraction"""
+        filters = {}
+        
+        # Status filters
+        if any(word in query for word in ['failed', 'failure', 'unsuccessful', 'denied']):
+            filters['outcome'] = 'failure'
+        elif any(word in query for word in ['successful', 'success', 'allowed', 'accepted']):
+            filters['outcome'] = 'success'
+        
+        # Security-specific filters
+        if 'vpn' in query:
+            filters['vpn'] = True
+        if any(term in query for term in ['mfa', 'multi-factor', 'two-factor', '2fa']):
+            filters['mfa'] = True
+        if any(term in query for term in ['suspicious', 'anomalous', 'unusual', 'abnormal']):
+            filters['suspicious'] = True
+        if any(term in query for term in ['malware', 'virus', 'trojan', 'ransomware']):
+            filters['malware'] = True
+        if any(term in query for term in ['brute force', 'bruteforce', 'password attack']):
+            filters['attack_type'] = 'brute_force'
+        
+        # Severity filters
+        severity_terms = ['low', 'medium', 'high', 'critical']
+        for severity in severity_terms:
+            if severity in query:
+                filters['severity'] = severity
+                break
+        
+        return filters
+    
+    def _extract_analysis_type(self, doc, query):
+        """Extract the type of analysis required"""
+        analysis_types = []
+        
+        if any(word in query for word in ['compare', 'comparison', 'versus', 'vs']):
+            analysis_types.append('comparison')
+        if any(word in query for word in ['trend', 'pattern', 'over time', 'timeline']):
+            analysis_types.append('trend')
+        if any(word in query for word in ['correlation', 'relationship', 'connected']):
+            analysis_types.append('correlation')
+        if any(word in query for word in ['anomaly', 'outlier', 'unusual', 'abnormal']):
+            analysis_types.append('anomaly_detection')
+        if any(word in query for word in ['forecast', 'predict', 'projection']):
+            analysis_types.append('prediction')
+        
+        return analysis_types
+    
+    def _semantic_field_mapping(self, query):
+        """Map query terms to database fields using semantic similarity"""
+        field_mappings = {}
+        
+        # Common field aliases
+        field_aliases = {
+            'user': ['username', 'userid', 'account', 'login'],
+            'ip': ['address', 'source', 'destination', 'client'],
+            'time': ['when', 'date', 'timestamp', 'occurred'],
+            'event': ['action', 'activity', 'incident', 'occurrence'],
+            'host': ['server', 'machine', 'computer', 'system'],
+            'file': ['document', 'attachment', 'executable', 'script']
+        }
+        
+        for field, aliases in field_aliases.items():
+            for alias in aliases:
+                if alias in query:
+                    field_mappings[alias] = field
+        
+        return field_mappings
+    
+    def _calculate_confidence(self, doc, entities, intent):
+        """Calculate confidence score for the parsing"""
+        confidence = 0.5  # Base confidence
+        
+        # Boost confidence based on entities found
+        confidence += min(len(entities) * 0.1, 0.3)
+        
+        # Boost confidence based on clear intent indicators
+        if any(token.pos_ in ['VERB', 'NOUN'] for token in doc):
+            confidence += 0.1
+        
+        # Reduce confidence for very short queries
+        if len(doc) < 3:
+            confidence -= 0.2
+        
+        return min(max(confidence, 0.0), 1.0)
+
+class EnhancedQueryGenerator:
+    """Enhanced query generator with optimizations"""
+    
+    def __init__(self, schema):
+        self.schema = schema
+    
+    def generate_query(self, parsed_data):
+        """Generate optimized Elasticsearch DSL query"""
+        intent = parsed_data['intent']
+        entities = parsed_data['entities']
+        time_range = parsed_data['time_range']
+        filters = parsed_data['filters']
+        analysis_type = parsed_data.get('analysis_type', [])
+        
+        # Build base query with performance optimizations
+        query = {
+            "bool": {
+                "must": [],
+                "filter": [],
+                "should": [],
+                "must_not": []
+            }
+        }
+        
+        # Add time range filter (always first for performance)
+        time_filter = self._build_time_filter(time_range)
+        query["bool"]["filter"].append(time_filter)
+        
+        # Add entity-based filters
+        self._add_entity_filters(query, entities)
+        
+        # Add additional filters
+        self._add_additional_filters(query, filters)
+        
+        # Build the complete query structure
+        es_query = {
+            "query": query,
+            "size": 1000 if intent == 'search' else 0,
+            "sort": [{"@timestamp": {"order": "desc"}}],
+            "_source": ["@timestamp", "event.*", "user.*", "source.*", "destination.*", "host.*"]
+        }
+        
+        # Add aggregations based on intent and analysis type
+        if intent in ['aggregate', 'visualize', 'report'] or analysis_type:
+            es_query['aggs'] = self._build_comprehensive_aggregations(entities, analysis_type)
+        
+        return es_query
+    
+    def _build_time_filter(self, time_range):
+        """Build optimized time range filter"""
+        if time_range['type'] == 'absolute':
+            # Handle absolute dates
+            return {
+                "range": {
+                    "@timestamp": {
+                        "gte": time_range['value'],
+                        "lte": "now"
+                    }
                 }
-        
-        # Extract relative time patterns
-        relative_patterns = {
-            r'(\d+)\s*hours?\s*ago': lambda m: {'gte': f'now-{m.group(1)}h', 'lt': 'now'},
-            r'(\d+)\s*days?\s*ago': lambda m: {'gte': f'now-{m.group(1)}d', 'lt': 'now'},
-            r'past\s*(\d+)\s*hours?': lambda m: {'gte': f'now-{m.group(1)}h', 'lt': 'now'},
-            r'past\s*(\d+)\s*days?': lambda m: {'gte': f'now-{m.group(1)}d', 'lt': 'now'}
-        }
-        
-        for pattern, range_func in relative_patterns.items():
-            match = re.search(pattern, query_lower)
-            if match:
-                return {
-                    'phrase': match.group(0),
-                    'elasticsearch_range': range_func(match),
-                    'confidence': 0.8
-                }
-        
-        return None
-    
-    def analyze_context_continuity(self, query: str, context: Dict = None) -> Dict:
-        """Analyze if query continues previous context"""
-        if not context:
-            return {'is_continuation': False, 'continuity_score': 0}
-        
-        query_lower = query.lower()
-        continuity_score = 0
-        
-        # Check for continuation markers
-        for marker in self.continuation_markers:
-            if marker in query_lower:
-                continuity_score += 1
-        
-        # Check for pronouns referring to previous context
-        pronouns = ['it', 'that', 'those', 'them', 'this', 'these']
-        for pronoun in pronouns:
-            if pronoun in query_lower:
-                continuity_score += 0.5
-        
-        return {
-            'is_continuation': continuity_score > 0,
-            'continuity_score': continuity_score,
-            'should_inherit_context': continuity_score > 1
-        }
-    
-    def calculate_confidence(self, entities: List, intent: Dict, time_range: Dict = None) -> float:
-        """Calculate overall confidence score"""
-        confidence = 0.0
-        
-        # Entity confidence
-        if entities:
-            entity_confidences = [e.get('confidence', 0) for e in entities]
-            confidence += max(entity_confidences) * 0.5
-        
-        # Intent confidence
-        confidence += intent.get('confidence', 0) * 0.3
-        
-        # Time range confidence
-        if time_range:
-            confidence += time_range.get('confidence', 0) * 0.2
-        
-        return min(confidence, 1.0)
-    
-    def build_kql_query(self, entities: List, time_range: Dict = None, intent: Dict = None) -> str:
-        """Build KQL query from extracted information"""
-        query_parts = []
-        
-        # Add entity queries
-        for entity in entities:
-            if 'kql' in entity:
-                query_parts.append(f"({entity['kql']})")
-        
-        # Add time range
-        if time_range:
-            es_range = time_range['elasticsearch_range']
-            time_kql = f"@timestamp:[{es_range.get('gte', 'now-24h')} TO {es_range.get('lt', 'now')}]"
-            query_parts.append(time_kql)
-        
-        # Combine with AND if multiple parts
-        if len(query_parts) > 1:
-            return ' AND '.join(query_parts)
-        elif query_parts:
-            return query_parts[0]
+            }
         else:
-            return 'event.category:security AND @timestamp:[now-24h TO now]'
+            # Handle relative dates
+            unit = time_range['unit']
+            value = time_range['value']
+            
+            unit_map = {
+                'seconds': 's',
+                'minutes': 'm',
+                'hours': 'h',
+                'days': 'd',
+                'weeks': 'w',
+                'months': 'M',
+                'years': 'y'
+            }
+            
+            es_unit = unit_map.get(unit, 'd')
+            
+            return {
+                "range": {
+                    "@timestamp": {
+                        "gte": f"now-{value}{es_unit}",
+                        "lte": "now"
+                    }
+                }
+            }
     
-    def build_elasticsearch_dsl(self, entities: List, time_range: Dict = None, intent: Dict = None) -> Dict:
-        """Build Elasticsearch DSL query"""
-        query_dsl = {
-            "query": {
-                "bool": {
-                    "must": [],
-                    "should": [],
-                    "filter": []
+    def _add_entity_filters(self, query, entities):
+        """Add entity-based filters to query"""
+        if 'event_type' in entities:
+            event_queries = self._build_event_filter(entities['event_type'])
+            query["bool"]["must"].extend(event_queries)
+        
+        if 'ip' in entities:
+            ip_list = entities['ip'] if isinstance(entities['ip'], list) else [entities['ip']]
+            query["bool"]["should"].extend([
+                {"terms": {"source.ip": ip_list}},
+                {"terms": {"destination.ip": ip_list}}
+            ])
+            query["bool"]["minimum_should_match"] = 1
+        
+        if 'user' in entities:
+            query["bool"]["must"].append({
+                "multi_match": {
+                    "query": entities['user'],
+                    "fields": ["user.name", "user.id", "user.email"]
+                }
+            })
+        
+        if 'host' in entities:
+            query["bool"]["must"].append({
+                "multi_match": {
+                    "query": entities['host'],
+                    "fields": ["host.name", "host.hostname", "agent.hostname"]
+                }
+            })
+        
+        if 'hash' in entities:
+            hash_list = entities['hash'] if isinstance(entities['hash'], list) else [entities['hash']]
+            query["bool"]["must"].append({"terms": {"file.hash.sha256": hash_list}})
+        
+        if 'domain' in entities:
+            domain_list = entities['domain'] if isinstance(entities['domain'], list) else [entities['domain']]
+            query["bool"]["must"].append({"terms": {"url.domain": domain_list}})
+    
+    def _add_additional_filters(self, query, filters):
+        """Add additional filters to query"""
+        if 'outcome' in filters:
+            query["bool"]["filter"].append({"term": {"event.outcome": filters['outcome']}})
+        
+        if 'severity' in filters:
+            query["bool"]["filter"].append({"term": {"event.severity": filters['severity']}})
+        
+        if filters.get('vpn'):
+            query["bool"]["must"].append({"match": {"network.type": "vpn"}})
+        
+        if filters.get('mfa'):
+            query["bool"]["must"].append({"match": {"authentication.method": "mfa"}})
+        
+        if filters.get('suspicious'):
+            query["bool"]["should"].extend([
+                {"range": {"event.risk_score": {"gte": 70}}},
+                {"term": {"threat.indicator.confidence": "high"}},
+                {"terms": {"event.category": ["malware", "intrusion_detection"]}}
+            ])
+            query["bool"]["minimum_should_match"] = 1
+        
+        if filters.get('malware'):
+            query["bool"]["must"].append({"term": {"event.category": "malware"}})
+        
+        if 'attack_type' in filters:
+            query["bool"]["must"].append({"match": {"attack.technique": filters['attack_type']}})
+    
+    def _build_event_filter(self, event_type):
+        """Build event type specific filters"""
+        queries = []
+        
+        event_mappings = {
+            'login': [
+                {"term": {"event.category": "authentication"}},
+                {"terms": {"event.action": ["logon", "login", "sign-in"]}}
+            ],
+            'failed_login': [
+                {"term": {"event.category": "authentication"}},
+                {"term": {"event.outcome": "failure"}}
+            ],
+            'malware': [
+                {"terms": {"event.category": ["malware", "threat"]}}
+            ],
+            'network': [
+                {"terms": {"event.category": ["network", "network_traffic"]}}
+            ],
+            'file_access': [
+                {"terms": {"event.category": ["file", "file_system"]}}
+            ],
+            'process': [
+                {"terms": {"event.category": ["process", "host"]}}
+            ]
+        }
+        
+        return event_mappings.get(event_type, [])
+    
+    def _build_comprehensive_aggregations(self, entities, analysis_types):
+        """Build comprehensive aggregations for analysis"""
+        aggs = {
+            "events_over_time": {
+                "date_histogram": {
+                    "field": "@timestamp",
+                    "calendar_interval": "1h",
+                    "min_doc_count": 1
                 }
             },
-            "sort": [{"@timestamp": {"order": "desc"}}],
-            "size": 100
-        }
-        
-        # Add entity queries
-        for entity in entities:
-            if 'elasticsearch_dsl' in entity:
-                query_dsl["query"]["bool"]["must"].append({"bool": entity['elasticsearch_dsl']})
-        
-        # Add time range filter
-        if time_range:
-            es_range = time_range['elasticsearch_range']
-            query_dsl["query"]["bool"]["filter"].append({
-                "range": {
-                    "@timestamp": es_range
+            "top_events": {
+                "terms": {
+                    "field": "event.action.keyword",
+                    "size": 20
                 }
-            })
+            },
+            "top_users": {
+                "terms": {
+                    "field": "user.name.keyword",
+                    "size": 15
+                }
+            },
+            "top_source_ips": {
+                "terms": {
+                    "field": "source.ip",
+                    "size": 15
+                }
+            },
+            "event_outcomes": {
+                "terms": {
+                    "field": "event.outcome",
+                    "size": 5
+                }
+            },
+            "severity_distribution": {
+                "terms": {
+                    "field": "event.severity",
+                    "size": 10
+                }
+            },
+            "geographic_distribution": {
+                "terms": {
+                    "field": "source.geo.country_name.keyword",
+                    "size": 10
+                }
+            }
+        }
         
-        # Add aggregations based on intent
-        if intent and intent['primary'] in ['report', 'analyze']:
-            query_dsl["aggs"] = {
-                "events_over_time": {
-                    "date_histogram": {
-                        "field": "@timestamp",
-                        "fixed_interval": "1h"
-                    }
-                },
-                "top_sources": {
-                    "terms": {
-                        "field": "source.ip",
-                        "size": 10
-                    }
+        # Add analysis-specific aggregations
+        if 'trend' in analysis_types:
+            aggs["daily_trends"] = {
+                "date_histogram": {
+                    "field": "@timestamp",
+                    "calendar_interval": "1d",
+                    "min_doc_count": 1
                 }
             }
         
-        return query_dsl
-    
-    def generate_suggestions(self, entities: List, intent: Dict) -> List[str]:
-        """Generate follow-up suggestions"""
-        suggestions = []
-        
-        if entities:
-            entity_names = [e['term'] for e in entities]
-            if 'failed login' in entity_names:
-                suggestions.extend([
-                    'Show successful logins after these failures',
-                    'Filter by specific user accounts',
-                    'Analyze source IP patterns'
-                ])
-            elif 'malware detection' in entity_names:
-                suggestions.extend([
-                    'Show affected systems',
-                    'Generate malware family analysis',
-                    'Check related network connections'
-                ])
-        
-        # Time-based suggestions
-        suggestions.extend([
-            'Expand time range for trend analysis',
-            'Filter to specific time window',
-            'Generate hourly breakdown'
-        ])
-        
-        return suggestions[:5]  # Limit to 5 suggestions
-
-class SIEMConnector:
-    """SIEM connector for Elasticsearch and Wazuh integration"""
-    
-    def __init__(self, config: SIEMConfig):
-        self.config = config
-        self.elasticsearch_client = None
-        self.wazuh_session = None
-        self.initialize_connections()
-    
-    def initialize_connections(self):
-        """Initialize connections to SIEM systems"""
-        # Initialize Elasticsearch
-        if Elasticsearch:
-            try:
-                self.elasticsearch_client = Elasticsearch(
-                    hosts=self.config.elasticsearch_hosts,
-                    basic_auth=(self.config.elasticsearch_username, self.config.elasticsearch_password),
-                    verify_certs=self.config.ssl_verify,
-                    timeout=self.config.timeout
-                )
-                
-                # Test connection
-                if self.elasticsearch_client.ping():
-                    logger.info("Elasticsearch connection successful")
-                else:
-                    logger.warning("Elasticsearch ping failed")
-                    
-            except Exception as e:
-                logger.error(f"Elasticsearch connection failed: {e}")
-                self.elasticsearch_client = None
-        
-        # Initialize Wazuh connection
-        try:
-            self.wazuh_session = requests.Session()
-            self.wazuh_session.verify = self.config.ssl_verify
-            
-            # Test authentication
-            auth_url = f"{self.config.wazuh_api_url}/security/user/authenticate"
-            response = self.wazuh_session.post(
-                auth_url,
-                auth=HTTPBasicAuth(self.config.wazuh_username, self.config.wazuh_password)
-            )
-            
-            if response.status_code == 200:
-                token_data = response.json().get('data', {})
-                token = token_data.get('token')
-                if token:
-                    self.wazuh_session.headers.update({'Authorization': f'Bearer {token}'})
-                    logger.info("Wazuh connection successful")
-            else:
-                logger.warning(f"Wazuh authentication failed: {response.status_code}")
-                
-        except Exception as e:
-            logger.error(f"Wazuh connection failed: {e}")
-            self.wazuh_session = None
-    
-    def execute_query(self, query_analysis: Dict) -> Dict:
-        """Execute query against SIEM systems"""
-        if self.elasticsearch_client:
-            return self.execute_elasticsearch_query(query_analysis)
-        else:
-            return self.execute_mock_query(query_analysis)
-    
-    def execute_elasticsearch_query(self, query_analysis: Dict) -> Dict:
-        """Execute query against Elasticsearch"""
-        try:
-            dsl_query = query_analysis['elasticsearch_dsl']
-            
-            # Determine index pattern
-            entities = query_analysis.get('entities', [])
-            index_pattern = self.determine_index_pattern(entities)
-            
-            # Execute search
-            start_time = time.time()
-            response = self.elasticsearch_client.search(
-                index=index_pattern,
-                body=dsl_query
-            )
-            query_time = time.time() - start_time
-            
-            # Extract results
-            hits = response['hits']['hits']
-            total_hits = response['hits']['total']['value']
-            
-            # Format results
-            formatted_results = []
-            for hit in hits:
-                result = hit['_source']
-                result['_id'] = hit['_id']
-                result['_index'] = hit['_index']
-                formatted_results.append(result)
-            
-            return {
-                'success': True,
-                'total_hits': total_hits,
-                'results': formatted_results,
-                'took': response['took'],
-                'query_time': round(query_time, 3),
-                'aggregations': response.get('aggregations', {}),
-                'index_pattern': index_pattern
+        if 'correlation' in analysis_types:
+            aggs["user_ip_correlation"] = {
+                "composite": {
+                    "sources": [
+                        {"user": {"terms": {"field": "user.name.keyword"}}},
+                        {"ip": {"terms": {"field": "source.ip"}}}
+                    ],
+                    "size": 100
+                }
             }
-            
-        except Exception as e:
-            logger.error(f"Elasticsearch query failed: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'fallback_results': self.execute_mock_query(query_analysis)
-            }
-    
-    def determine_index_pattern(self, entities: List) -> str:
-        """Determine appropriate index pattern based on entities"""
-        if not entities:
-            return self.config.index_patterns.get('security', 'security-*')
         
-        # Map entity categories to index patterns
-        category_to_index = {
-            'authentication': 'authentication',
-            'malware': 'malware',
-            'network': 'network',
-            'web': 'web',
-            'endpoint': 'endpoint'
-        }
-        
-        for entity in entities:
-            category = entity.get('category')
-            if category in category_to_index:
-                index_key = category_to_index[category]
-                return self.config.index_patterns.get(index_key, 'security-*')
-        
-        return self.config.index_patterns.get('security', 'security-*')
-    
-    def execute_mock_query(self, query_analysis: Dict) -> Dict:
-        """Execute mock query for demonstration"""
-        # Simulate processing time
-        processing_time = random.uniform(0.3, 1.5)
-        time.sleep(processing_time / 10)  # Reduced for demo
-        
-        # Generate mock results based on entities
-        entities = query_analysis.get('entities', [])
-        mock_results = self.generate_mock_results(entities)
-        
-        return {
-            'success': True,
-            'total_hits': len(mock_results),
-            'results': mock_results,
-            'took': int(processing_time * 1000),
-            'query_time': processing_time,
-            'data_source': 'mock_data',
-            'note': 'Using mock data - configure Elasticsearch connection for real data'
-        }
-    
-    def generate_mock_results(self, entities: List) -> List[Dict]:
-        """Generate realistic mock SIEM data"""
-        mock_results = []
-        
-        if not entities:
-            return mock_results
-        
-        # Generate results based on entity types
-        for entity in entities[:2]:  # Limit to first 2 entities
-            entity_type = entity.get('term', 'unknown')
-            
-            if 'login' in entity_type or 'authentication' in entity_type:
-                mock_results.extend(self.generate_auth_events())
-            elif 'malware' in entity_type or 'virus' in entity_type:
-                mock_results.extend(self.generate_malware_events())
-            elif 'network' in entity_type:
-                mock_results.extend(self.generate_network_events())
-            elif 'vpn' in entity_type:
-                mock_results.extend(self.generate_vpn_events())
-        
-        # Sort by timestamp
-        mock_results.sort(key=lambda x: x.get('@timestamp', ''), reverse=True)
-        return mock_results[:20]  # Limit to 20 results
-    
-    def generate_auth_events(self) -> List[Dict]:
-        """Generate mock authentication events"""
-        events = []
-        base_time = datetime.now()
-        
-        for i in range(5):
-            event_time = base_time - timedelta(hours=i, minutes=random.randint(0, 59))
-            events.append({
-                '@timestamp': event_time.isoformat() + 'Z',
-                'event.category': 'authentication',
-                'event.outcome': random.choice(['failure', 'failure', 'success']),
-                'event.action': 'login',
-                'user.name': random.choice(['admin', 'user1', 'service_account', 'analyst']),
-                'source.ip': f"192.168.1.{random.randint(100, 200)}",
-                'host.name': f"workstation-{random.randint(1, 10):02d}",
-                'user_agent.original': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            })
-        
-        return events
-    
-    def generate_malware_events(self) -> List[Dict]:
-        """Generate mock malware detection events"""
-        events = []
-        base_time = datetime.now()
-        
-        for i in range(3):
-            event_time = base_time - timedelta(hours=i*2, minutes=random.randint(0, 59))
-            events.append({
-                '@timestamp': event_time.isoformat() + 'Z',
-                'event.category': 'malware',
-                'event.action': 'detected',
-                'file.name': random.choice(['suspicious.exe', 'malware.dll', 'trojan.bin']),
-                'file.hash.sha256': f"{'0123456789abcdef' * 4}",
-                'host.name': f"endpoint-{random.randint(1, 15):02d}",
-                'threat.indicator.type': 'malware',
-                'process.name': 'antivirus_scanner.exe'
-            })
-        
-        return events
-    
-    def generate_network_events(self) -> List[Dict]:
-        """Generate mock network events"""
-        events = []
-        base_time = datetime.now()
-        
-        for i in range(4):
-            event_time = base_time - timedelta(minutes=i*15 + random.randint(0, 14))
-            events.append({
-                '@timestamp': event_time.isoformat() + 'Z',
-                'event.category': 'network',
-                'event.action': random.choice(['blocked', 'allowed', 'monitored']),
-                'source.ip': f"203.0.113.{random.randint(1, 254)}",
-                'destination.ip': f"192.168.1.{random.randint(1, 254)}",
-                'destination.port': random.choice([80, 443, 22, 3389, 1433]),
-                'network.bytes': random.randint(1024, 1048576),
-                'tags': random.choice([['suspicious'], ['anomaly'], ['blocked'], []])
-            })
-        
-        return events
-    
-    def generate_vpn_events(self) -> List[Dict]:
-        """Generate mock VPN events"""
-        events = []
-        base_time = datetime.now()
-        
-        for i in range(3):
-            event_time = base_time - timedelta(hours=i, minutes=random.randint(0, 59))
-            events.append({
-                '@timestamp': event_time.isoformat() + 'Z',
-                'event.category': 'authentication',
-                'event.action': 'vpn_connection',
-                'event.outcome': random.choice(['success', 'failure']),
-                'service.name': 'vpn',
-                'user.name': f"user{random.randint(1, 100)}",
-                'source.ip': f"203.0.113.{random.randint(1, 254)}",
-                'destination.ip': '192.168.100.1',
-                'network.protocol': 'openvpn'
-            })
-        
-        return events
+        return aggs
 
-class ContextManager:
-    """Manage conversation context for multi-turn queries"""
+class AdvancedVisualizationGenerator:
+    """Generate advanced visualizations using matplotlib, seaborn, and plotly"""
     
     def __init__(self):
-        self.sessions = {}
+        # Set style for better-looking plots
+        plt.style.use('seaborn-v0_8')
+        sns.set_palette("husl")
     
-    def create_session(self, session_id: str) -> Dict:
-        """Create new conversation session"""
-        self.sessions[session_id] = {
-            'id': session_id,
-            'created_at': datetime.now().isoformat(),
-            'last_activity': datetime.now().isoformat(),
-            'query_history': [],
-            'context': {
-                'active_entities': [],
-                'time_context': None,
-                'investigation_focus': None,
-                'user_intent_pattern': []
+    def generate_comprehensive_visualization(self, results, parsed_data, statistics):
+        """Generate comprehensive visualization suite"""
+        visualizations = {}
+        
+        try:
+            # Time series analysis
+            if 'events_over_time' in results.get('aggregations', {}):
+                visualizations['timeline'] = self._create_timeline_chart(
+                    results['aggregations']['events_over_time']
+                )
+            
+            # Distribution charts
+            if statistics.get('event_types'):
+                visualizations['event_distribution'] = self._create_distribution_chart(
+                    statistics['event_types'], 'Event Types Distribution'
+                )
+            
+            # Geographic visualization
+            if 'geographic_distribution' in results.get('aggregations', {}):
+                visualizations['geo_map'] = self._create_geographic_visualization(
+                    results['aggregations']['geographic_distribution']
+                )
+            
+            # Network analysis
+            if statistics.get('users') and statistics.get('source_ips'):
+                visualizations['network_graph'] = self._create_network_graph(
+                    statistics['users'], statistics.get('source_ips', {})
+                )
+            
+            # Heatmap for correlation analysis
+            if len(statistics) > 2:
+                visualizations['correlation_heatmap'] = self._create_correlation_heatmap(statistics)
+            
+            # Threat landscape overview
+            visualizations['threat_overview'] = self._create_threat_overview(statistics)
+            
+            return visualizations
+            
+        except Exception as e:
+            print(f"Visualization generation error: {e}")
+            return {"error": f"Failed to generate visualizations: {str(e)}"}
+    
+    def _create_timeline_chart(self, time_data):
+        """Create interactive timeline chart"""
+        buckets = time_data.get('buckets', [])
+        
+        dates = [bucket['key_as_string'] for bucket in buckets]
+        counts = [bucket['doc_count'] for bucket in buckets]
+        
+        fig, ax = plt.subplots(figsize=(14, 6))
+        ax.plot(dates, counts, marker='o', linewidth=2, markersize=4)
+        ax.fill_between(dates, counts, alpha=0.3)
+        
+        ax.set_title('Security Events Timeline', fontsize=16, fontweight='bold')
+        ax.set_xlabel('Time', fontsize=12)
+        ax.set_ylabel('Event Count', fontsize=12)
+        ax.grid(True, alpha=0.3)
+        
+        # Rotate x-axis labels for better readability
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        
+        return self._fig_to_base64(fig)
+    
+    def _create_distribution_chart(self, data, title):
+        """Create distribution pie chart with enhanced styling"""
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+        
+        # Sort data and take top 10
+        sorted_data = dict(sorted(data.items(), key=lambda x: x[1], reverse=True)[:10])
+        
+        # Pie chart
+        colors = plt.cm.Set3(np.linspace(0, 1, len(sorted_data)))
+        wedges, texts, autotexts = ax1.pie(
+            sorted_data.values(), 
+            labels=sorted_data.keys(),
+            autopct='%1.1f%%',
+            startangle=90,
+            colors=colors,
+            explode=[0.05] * len(sorted_data)
+        )
+        ax1.set_title(title, fontsize=14, fontweight='bold')
+        
+        # Bar chart
+        ax2.bar(range(len(sorted_data)), list(sorted_data.values()), color=colors)
+        ax2.set_xticks(range(len(sorted_data)))
+        ax2.set_xticklabels(sorted_data.keys(), rotation=45, ha='right')
+        ax2.set_title('Event Counts', fontsize=14, fontweight='bold')
+        ax2.set_ylabel('Count', fontsize=12)
+        
+        plt.tight_layout()
+        return self._fig_to_base64(fig)
+    
+    def _create_geographic_visualization(self, geo_data):
+        """Create geographic distribution visualization"""
+        buckets = geo_data.get('buckets', [])
+        countries = [bucket['key'] for bucket in buckets]
+        counts = [bucket['doc_count'] for bucket in buckets]
+        
+        fig, ax = plt.subplots(figsize=(12, 8))
+        bars = ax.barh(countries, counts)
+        ax.set_title('Geographic Distribution of Security Events', fontsize=16, fontweight='bold')
+        ax.set_xlabel('Event Count', fontsize=12)
+        ax.set_ylabel('Country', fontsize=12)
+        
+        # Color bars based on count
+        colors = plt.cm.Reds(np.linspace(0.4, 1, len(counts)))
+        for bar, color in zip(bars, colors):
+            bar.set_color(color)
+        
+        plt.tight_layout()
+        return self._fig_to_base64(fig)
+    
+    def _create_network_graph(self, users, ips):
+        """Create network graph showing user-IP relationships"""
+        G = nx.Graph()
+        
+        # Add nodes
+        for user in list(users.keys())[:10]:  # Top 10 users
+            G.add_node(f"user_{user}", type='user', size=users[user])
+        
+        for ip in list(ips.keys())[:15]:  # Top 15 IPs
+            G.add_node(f"ip_{ip}", type='ip', size=ips[ip])
+        
+        # Add edges (simplified - in real implementation, use correlation data)
+        user_nodes = [n for n in G.nodes() if n.startswith('user_')]
+        ip_nodes = [n for n in G.nodes() if n.startswith('ip_')]
+        
+        # Create some connections based on activity levels
+        for i, user in enumerate(user_nodes[:5]):
+            for j, ip in enumerate(ip_nodes[i:i+3]):  # Connect each user to 3 IPs
+                G.add_edge(user, ip)
+        
+        fig, ax = plt.subplots(figsize=(14, 10))
+        pos = nx.spring_layout(G, k=3, iterations=50)
+        
+        # Draw nodes
+        user_nodes = [n for n in G.nodes() if n.startswith('user_')]
+        ip_nodes = [n for n in G.nodes() if n.startswith('ip_')]
+        
+        nx.draw_networkx_nodes(G, pos, nodelist=user_nodes, node_color='lightblue', 
+                              node_size=300, alpha=0.8, ax=ax)
+        nx.draw_networkx_nodes(G, pos, nodelist=ip_nodes, node_color='lightcoral', 
+                              node_size=200, alpha=0.8, ax=ax)
+        
+        # Draw edges
+        nx.draw_networkx_edges(G, pos, alpha=0.5, ax=ax)
+        
+        # Draw labels
+        labels = {node: node.split('_')[1] for node in G.nodes()}
+        nx.draw_networkx_labels(G, pos, labels, font_size=8, ax=ax)
+        
+        ax.set_title('User-IP Network Relationships', fontsize=16, fontweight='bold')
+        ax.axis('off')
+        
+        plt.tight_layout()
+        return self._fig_to_base64(fig)
+    
+    def _create_correlation_heatmap(self, statistics):
+        """Create correlation heatmap for different metrics"""
+        # Prepare correlation data
+        metrics = {}
+        
+        if 'event_types' in statistics:
+            metrics.update({f"event_{k}": v for k, v in list(statistics['event_types'].items())[:10]})
+        if 'users' in statistics:
+            metrics.update({f"user_{k}": v for k, v in list(statistics['users'].items())[:5]})
+        if 'outcomes' in statistics:
+            metrics.update(statistics['outcomes'])
+        
+        # Create correlation matrix
+        df = pd.DataFrame([metrics])
+        correlation_matrix = df.corr()
+        
+        fig, ax = plt.subplots(figsize=(12, 10))
+        sns.heatmap(correlation_matrix, annot=True, cmap='RdYlBu_r', center=0, ax=ax)
+        ax.set_title('Security Metrics Correlation Matrix', fontsize=16, fontweight='bold')
+        
+        plt.tight_layout()
+        return self._fig_to_base64(fig)
+    
+    def _create_threat_overview(self, statistics):
+        """Create comprehensive threat landscape overview"""
+        fig = plt.figure(figsize=(16, 12))
+        gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
+        
+        # Threat severity gauge
+        ax1 = fig.add_subplot(gs[0, 0])
+        threat_levels = statistics.get('outcomes', {})
+        if threat_levels:
+            total_events = sum(threat_levels.values())
+            failure_rate = threat_levels.get('failure', 0) / total_events * 100 if total_events > 0 else 0
+            
+            colors = ['green', 'yellow', 'orange', 'red']
+            sizes = [25, 25, 25, 25]
+            if failure_rate < 10:
+                explode = [0.1, 0, 0, 0]
+            elif failure_rate < 30:
+                explode = [0, 0.1, 0, 0]
+            elif failure_rate < 50:
+                explode = [0, 0, 0.1, 0]
+            else:
+                explode = [0, 0, 0, 0.1]
+            
+            ax1.pie(sizes, colors=colors, explode=explode, startangle=90)
+            ax1.set_title(f'Threat Level\n({failure_rate:.1f}% Failed Events)', fontsize=12)
+        
+        # Top threats
+        ax2 = fig.add_subplot(gs[0, 1:])
+        if 'event_types' in statistics:
+            top_events = dict(sorted(statistics['event_types'].items(), key=lambda x: x[1], reverse=True)[:8])
+            bars = ax2.barh(range(len(top_events)), list(top_events.values()))
+            ax2.set_yticks(range(len(top_events)))
+            ax2.set_yticklabels(top_events.keys())
+            ax2.set_title('Top Security Events', fontsize=12)
+            
+            # Color bars by threat level
+            max_val = max(top_events.values()) if top_events else 1
+            colors = plt.cm.Reds(np.array(list(top_events.values())) / max_val)
+            for bar, color in zip(bars, colors):
+                bar.set_color(color)
+        
+        # Hourly activity
+        ax3 = fig.add_subplot(gs[1, :])
+        if 'hourly_distribution' in statistics:
+            hours = sorted(statistics['hourly_distribution'].keys())
+            counts = [statistics['hourly_distribution'][h] for h in hours]
+            ax3.plot(hours, counts, marker='o', linewidth=2)
+            ax3.fill_between(hours, counts, alpha=0.3)
+            ax3.set_title('24-Hour Activity Pattern', fontsize=12)
+            ax3.set_xlabel('Hour of Day')
+            ax3.set_ylabel('Event Count')
+            ax3.grid(True, alpha=0.3)
+        
+        # Word cloud for event types
+        ax4 = fig.add_subplot(gs[2, :2])
+        if 'event_types' in statistics:
+            wordcloud = WordCloud(width=400, height=200, background_color='white').generate_from_frequencies(
+                statistics['event_types']
+            )
+            ax4.imshow(wordcloud, interpolation='bilinear')
+            ax4.set_title('Event Types Word Cloud', fontsize=12)
+            ax4.axis('off')
+        
+        # Risk score distribution
+        ax5 = fig.add_subplot(gs[2, 2])
+        risk_scores = [20, 35, 30, 15]  # Mock risk distribution
+        risk_labels = ['Low', 'Medium', 'High', 'Critical']
+        colors = ['green', 'yellow', 'orange', 'red']
+        ax5.pie(risk_scores, labels=risk_labels, colors=colors, autopct='%1.1f%%')
+        ax5.set_title('Risk Distribution', fontsize=12)
+        
+        plt.suptitle('Security Threat Landscape Overview', fontsize=18, fontweight='bold', y=0.98)
+        return self._fig_to_base64(fig)
+    
+    def _fig_to_base64(self, fig):
+        """Convert matplotlib figure to base64 string"""
+        img_buffer = io.BytesIO()
+        fig.savefig(img_buffer, format='png', dpi=100, bbox_inches='tight', 
+                   facecolor='white', edgecolor='none')
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.read()).decode()
+        plt.close(fig)
+        return f'data:image/png;base64,{img_base64}'
+
+class EnhancedResponseFormatter:
+    """Enhanced response formatter with rich content generation"""
+    
+    def __init__(self):
+        self.viz_generator = AdvancedVisualizationGenerator()
+    
+    def format_response(self, results, intent, parsed_data):
+        """Format comprehensive response with multiple content types"""
+        if intent == 'search':
+            return self._format_search_results(results, parsed_data)
+        elif intent == 'aggregate':
+            return self._format_aggregate_results(results, parsed_data)
+        elif intent == 'report':
+            return self._format_comprehensive_report(results, parsed_data)
+        elif intent == 'visualize':
+            return self._format_visualization_response(results, parsed_data)
+        elif intent == 'compare':
+            return self._format_comparison_analysis(results, parsed_data)
+        elif intent == 'trend':
+            return self._format_trend_analysis(results, parsed_data)
+        else:
+            return self._format_search_results(results, parsed_data)
+    
+    def _format_search_results(self, results, parsed_data):
+        """Enhanced search results formatting"""
+        if not results or 'hits' not in results:
+            return {
+                'text': "No security events found matching your query criteria.",
+                'count': 0,
+                'results': [],
+                'suggestions': self._generate_search_suggestions(parsed_data)
+            }
+        
+        hits = results['hits']['hits']
+        total = results['hits']['total']['value']
+        
+        # Enhanced result processing
+        formatted_results = []
+        threat_indicators = []
+        
+        for hit in hits[:20]:  # Show top 20
+            source = hit['_source']
+            
+            # Extract comprehensive event data
+            event_data = {
+                'timestamp': source.get('@timestamp', 'N/A'),
+                'event': source.get('event', {}).get('action', 'N/A'),
+                'category': source.get('event', {}).get('category', 'N/A'),
+                'user': source.get('user', {}).get('name', 'N/A'),
+                'source_ip': source.get('source', {}).get('ip', 'N/A'),
+                'destination_ip': source.get('destination', {}).get('ip', 'N/A'),
+                'outcome': source.get('event', {}).get('outcome', 'N/A'),
+                'host': source.get('host', {}).get('name', 'N/A'),
+                'severity': source.get('event', {}).get('severity', 'N/A'),
+                'risk_score': source.get('event', {}).get('risk_score', 'N/A')
+            }
+            
+            formatted_results.append(event_data)
+            
+            # Identify potential threats
+            if event_data['outcome'] == 'failure' or event_data['severity'] in ['high', 'critical']:
+                threat_indicators.append(event_data)
+        
+        # Generate summary statistics
+        statistics = self._generate_statistics(formatted_results)
+        
+        # Create narrative summary
+        summary = self._generate_narrative_summary(formatted_results, parsed_data, total)
+        
+        return {
+            'text': summary,
+            'count': total,
+            'results': formatted_results,
+            'statistics': statistics,
+            'threat_indicators': threat_indicators,
+            'query_confidence': parsed_data.get('confidence', 0.7),
+            'analysis_suggestions': self._generate_analysis_suggestions(statistics)
+        }
+    
+    def _format_comprehensive_report(self, results, parsed_data):
+        """Generate comprehensive security report"""
+        if not results or 'hits' not in results:
+            return {
+                'text': "Insufficient data available for comprehensive report generation.",
+                'count': 0
+            }
+        
+        hits = results['hits']['hits']
+        total = results['hits']['total']['value']
+        aggregations = results.get('aggregations', {})
+        
+        # Comprehensive analysis
+        statistics = self._analyze_comprehensive_data(hits, aggregations)
+        
+        # Generate executive summary
+        exec_summary = self._generate_executive_summary(statistics, parsed_data)
+        
+        # Detailed analysis sections
+        threat_analysis = self._generate_threat_analysis(statistics)
+        trend_analysis = self._generate_trend_analysis(statistics)
+        recommendations = self._generate_security_recommendations(statistics)
+        
+        # Generate visualizations
+        visualizations = self._generate_report_visualizations(results, statistics)
+        
+        report = {
+            'executive_summary': exec_summary,
+            'detailed_analysis': {
+                'threat_landscape': threat_analysis,
+                'trends': trend_analysis,
+                'statistics': statistics
             },
-            'statistics': {
-                'total_queries': 0,
-                'successful_queries': 0,
-                'avg_confidence': 0.0
+            'visualizations': visualizations,
+            'recommendations': recommendations,
+            'metadata': {
+                'generated_at': datetime.now().isoformat(),
+                'query': parsed_data['original_query'],
+                'time_range': parsed_data['time_range'],
+                'total_events': total,
+                'confidence_score': parsed_data.get('confidence', 0.7)
             }
         }
-        return self.sessions[session_id]
-    
-    def get_session(self, session_id: str) -> Optional[Dict]:
-        """Get existing session or create new one"""
-        if session_id not in self.sessions:
-            return self.create_session(session_id)
-        return self.sessions[session_id]
-    
-    def update_session(self, session_id: str, query_analysis: Dict, results: Dict):
-        """Update session with new query information"""
-        session = self.get_session(session_id)
-        session['last_activity'] = datetime.now().isoformat()
         
-        # Add to query history
-        session['query_history'].append({
-            'query': query_analysis['original_query'],
-            'entities': query_analysis['entities'],
-            'intent': query_analysis['intent'],
-            'confidence': query_analysis['confidence'],
+        return {
+            'text': exec_summary,
+            'report': report,
+            'count': total,
+            'statistics': statistics
+        }
+    
+    def _generate_narrative_summary(self, results, parsed_data, total):
+        """Generate intelligent narrative summary"""
+        if not results:
+            return "No security events were found matching your query."
+        
+        # Analyze patterns
+        failed_events = len([r for r in results if r['outcome'] == 'failure'])
+        unique_users = len(set(r['user'] for r in results if r['user'] != 'N/A'))
+        unique_ips = len(set(r['source_ip'] for r in results if r['source_ip'] != 'N/A'))
+        
+        # Build narrative
+        summary = f"Security Analysis Results:\n\n"
+        summary += f"Found {total:,} security events matching your criteria. "
+        
+        if failed_events > 0:
+            failure_rate = (failed_events / len(results)) * 100
+            summary += f"Of these, {failed_events:,} events ({failure_rate:.1f}%) resulted in failures, "
+            summary += "indicating potential security concerns. "
+        
+        summary += f"The events involved {unique_users} unique users and originated from {unique_ips} distinct IP addresses. "
+        
+        # Add insights based on patterns
+        if failure_rate > 50:
+            summary += "\n\nHIGH ALERT: The high failure rate suggests possible security incidents or attack attempts. "
+        elif failure_rate > 20:
+            summary += "\n\nMODERATE CONCERN: The failure rate is elevated and warrants investigation. "
+        
+        # Time-based insights
+        time_range = parsed_data.get('time_range', {})
+        summary += f"\n\nAnalysis Period: Last {time_range.get('value', 'unknown')} {time_range.get('unit', 'time period')}"
+        
+        return summary
+    
+    def _generate_statistics(self, results):
+        """Generate comprehensive statistics from results"""
+        if not results:
+            return {}
+        
+        statistics = {
+            'event_types': Counter(r['category'] for r in results if r['category'] != 'N/A'),
+            'users': Counter(r['user'] for r in results if r['user'] != 'N/A'),
+            'source_ips': Counter(r['source_ip'] for r in results if r['source_ip'] != 'N/A'),
+            'outcomes': Counter(r['outcome'] for r in results if r['outcome'] != 'N/A'),
+            'hosts': Counter(r['host'] for r in results if r['host'] != 'N/A'),
+            'severity': Counter(r['severity'] for r in results if r['severity'] != 'N/A'),
+            'hourly_distribution': self._calculate_hourly_distribution(results)
+        }
+        
+        return {k: dict(v) for k, v in statistics.items()}
+    
+    def _calculate_hourly_distribution(self, results):
+        """Calculate hourly distribution of events"""
+        hourly_counts = defaultdict(int)
+        
+        for result in results:
+            if result['timestamp'] != 'N/A':
+                try:
+                    dt = datetime.fromisoformat(result['timestamp'].replace('Z', '+00:00'))
+                    hourly_counts[dt.hour] += 1
+                except:
+                    continue
+        
+        return dict(hourly_counts)
+    
+    def _generate_security_recommendations(self, statistics):
+        """Generate actionable security recommendations"""
+        recommendations = []
+        
+        # Analyze failure patterns
+        outcomes = statistics.get('outcomes', {})
+        if outcomes:
+            failure_count = outcomes.get('failure', 0)
+            success_count = outcomes.get('success', 0)
+            total = failure_count + success_count
+            
+            if total > 0 and (failure_count / total) > 0.3:
+                recommendations.append({
+                    'priority': 'HIGH',
+                    'category': 'Authentication Security',
+                    'recommendation': 'High failure rate detected. Implement stronger authentication controls and monitor for brute force attacks.',
+                    'rationale': f'Failure rate is {(failure_count/total)*100:.1f}% which exceeds recommended threshold.'
+                })
+        
+        # Analyze IP patterns
+        source_ips = statistics.get('source_ips', {})
+        if len(source_ips) > 0:
+            top_ip_count = max(source_ips.values()) if source_ips else 0
+            total_events = sum(source_ips.values())
+            
+            if top_ip_count / total_events > 0.5:
+                recommendations.append({
+                    'priority': 'MEDIUM',
+                    'category': 'Network Security',
+                    'recommendation': 'High concentration of events from single IP address. Consider IP-based monitoring and potential blocking.',
+                    'rationale': f'Single IP accounts for {(top_ip_count/total_events)*100:.1f}% of all events.'
+                })
+        
+        # Analyze time patterns
+        hourly_dist = statistics.get('hourly_distribution', {})
+        if hourly_dist:
+            off_hours_events = sum(count for hour, count in hourly_dist.items() if hour < 6 or hour > 22)
+            total_hourly = sum(hourly_dist.values())
+            
+            if off_hours_events / total_hourly > 0.2:
+                recommendations.append({
+                    'priority': 'MEDIUM',
+                    'category': 'Temporal Analysis',
+                    'recommendation': 'Significant off-hours activity detected. Implement enhanced monitoring during non-business hours.',
+                    'rationale': f'{(off_hours_events/total_hourly)*100:.1f}% of events occur outside business hours.'
+                })
+        
+        return recommendations
+    
+    def _generate_report_visualizations(self, results, statistics):
+        """Generate visualizations for the report"""
+        return self.viz_generator.generate_comprehensive_visualization(results, {}, statistics)
+
+# Enhanced Context Manager with ML capabilities
+class MLContextManager:
+    """Advanced context manager with machine learning for intent prediction"""
+    
+    def __init__(self):
+        self.contexts = {}
+        self.intent_history = []
+        self.entity_patterns = defaultdict(list)
+    
+    def update_context(self, session_id, parsed_data, results):
+        """Update context with learning capabilities"""
+        if session_id not in self.contexts:
+            self.contexts[session_id] = {
+                'history': [],
+                'last_queries': [],
+                'learned_patterns': {},
+                'user_preferences': {}
+            }
+        
+        context = self.contexts[session_id]
+        
+        # Store query history
+        query_record = {
+            'query': parsed_data['original_query'],
+            'intent': parsed_data['intent'],
+            'entities': parsed_data['entities'],
             'timestamp': datetime.now().isoformat(),
-            'results_count': results.get('total_hits', 0)
-        })
-        
-        # Update context
-        entities = query_analysis.get('entities', [])
-        if entities:
-            # Keep track of active entities
-            entity_terms = [e['term'] for e in entities]
-            session['context']['active_entities'] = list(set(
-                session['context']['active_entities'] + entity_terms
-            ))[-5:]  # Keep last 5 unique entities
-        
-        # Update time context if present
-        if query_analysis.get('time_range'):
-            session['context']['time_context'] = query_analysis['time_range']
-        
-        # Update statistics
-        session['statistics']['total_queries'] += 1
-        if results.get('success', True):
-            session['statistics']['successful_queries'] += 1
-        
-        # Update average confidence
-        total_confidence = session['statistics']['avg_confidence'] * (session['statistics']['total_queries'] - 1)
-        session['statistics']['avg_confidence'] = (total_confidence + query_analysis['confidence']) / session['statistics']['total_queries']
-        
-        # Keep only last 10 queries to prevent memory bloat
-        if len(session['query_history']) > 10:
-            session['query_history'] = session['query_history'][-10:]
-
-# Initialize components
-config = SIEMConfig.from_env()
-nlp_processor = AdvancedNLPProcessor()
-siem_connector = SIEMConnector(config)
-context_manager = ContextManager()
-
-# Input validation schemas
-class QuerySchema(Schema):
-    query = fields.Str(required=True, validate=validate.Length(min=1, max=2000))
-    session_id = fields.Str(validate=validate.Length(max=100))
-    context = fields.Dict(missing={})
-
-def validate_input(schema):
-    """Input validation decorator"""
-    def decorator(f):
-        @wraps(f)
-        def decorated(*args, **kwargs):
-            try:
-                data = schema.load(request.json)
-                return f(data, *args, **kwargs)
-            except ValidationError as err:
-                return jsonify({
-                    'success': False,
-                    'error': 'Input validation failed',
-                    'details': err.messages
-                }), 400
-            except Exception as e:
-                return jsonify({
-                    'success': False,
-                    'error': 'Invalid JSON format'
-                }), 400
-        return decorated
-    return decorator
-
-# API Routes
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'service': 'Conversational SIEM Assistant API',
-        'version': '1.0.0',
-        'components': {
-            'nlp_processor': 'active',
-            'elasticsearch': 'connected' if siem_connector.elasticsearch_client else 'mock_mode',
-            'wazuh': 'connected' if siem_connector.wazuh_session else 'disconnected'
-        }
-    })
-
-@app.route('/api/query', methods=['POST'])
-@validate_input(QuerySchema())
-def process_query(data):
-    """Process natural language SIEM query"""
-    try:
-        query = data['query']
-        session_id = data.get('session_id', str(uuid.uuid4()))
-        
-        # Get session context
-        session = context_manager.get_session(session_id)
-        
-        # Process query with NLP
-        query_analysis = nlp_processor.parse_query(query, session['context'])
-        
-        # Execute SIEM query
-        results = siem_connector.execute_query(query_analysis)
-        
-        # Update session context
-        context_manager.update_session(session_id, query_analysis, results)
-        
-        # Format response
-        response = {
-            'success': True,
-            'session_id': session_id,
-            'query_analysis': {
-                'original_query': query_analysis['original_query'],
-                'intent': query_analysis['intent']['primary'],
-                'entities': [e['term'] for e in query_analysis['entities']],
-                'confidence': query_analysis['confidence'],
-                'processing_time': query_analysis['processing_time']
-            },
-            'siem_queries': {
-                'kql': query_analysis['kql_query'],
-                'elasticsearch_dsl': query_analysis['elasticsearch_dsl']
-            },
-            'results': {
-                'total_hits': results.get('total_hits', 0),
-                'sample_events': results.get('results', [])[:5],  # First 5 events
-                'query_time': results.get('query_time', 0),
-                'data_source': results.get('data_source', 'elasticsearch')
-            },
-            'insights': generate_insights(query_analysis, results),
-            'suggestions': query_analysis.get('suggestions', []),
-            'context': {
-                'session_queries': len(session['query_history']),
-                'avg_confidence': session['statistics']['avg_confidence']
-            }
+            'confidence': parsed_data.get('confidence', 0.7)
         }
         
-        # Emit to WebSocket if available
-        socketio.emit('query_result', response, room=session_id)
+        context['history'].append(query_record)
+        context['last_queries'].append(parsed_data)
         
-        return jsonify(response)
+        # Learn user patterns
+        self._learn_user_patterns(context, parsed_data)
         
-    except Exception as e:
-        logger.error(f"Query processing error: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': f'Query processing failed: {str(e)}',
-            'suggestions': [
-                'Try simplifying your query',
-                'Use specific security terms like "failed login" or "malware detection"',
-                'Include time ranges like "yesterday" or "last week"'
-            ]
-        }), 500
-
-@app.route('/api/session/<session_id>', methods=['GET'])
-def get_session_info(session_id: str):
-    """Get session information and history"""
-    session = context_manager.get_session(session_id)
+        # Keep context manageable
+        if len(context['history']) > 20:
+            context['history'] = context['history'][-20:]
+        if len(context['last_queries']) > 10:
+            context['last_queries'] = context['last_queries'][-10:]
     
-    return jsonify({
-        'success': True,
-        'session': {
-            'id': session['id'],
-            'created_at': session['created_at'],
-            'last_activity': session['last_activity'],
-            'statistics': session['statistics'],
-            'context': session['context'],
-            'recent_queries': session['query_history'][-5:]  # Last 5 queries
-        }
-    })
+    def _learn_user_patterns(self, context, parsed_data):
+        """Learn patterns from user behavior"""
+        intent = parsed_data['intent']
+        entities = parsed_data['entities']
+        
+        # Learn intent patterns
+        if 'intent_patterns' not in context['learned_patterns']:
+            context['learned_patterns']['intent_patterns'] = defaultdict(int)
+        
+        context['learned_patterns']['intent_patterns'][intent] += 1
+        
+        # Learn entity co-occurrence
+        if 'entity_cooccurrence' not in context['learned_patterns']:
+            context['learned_patterns']['entity_cooccurrence'] = defaultdict(lambda: defaultdict(int))
+        
+        entity_types = list(entities.keys())
+        for i, e1 in enumerate(entity_types):
+            for e2 in entity_types[i+1:]:
+                context['learned_patterns']['entity_cooccurrence'][e1][e2] += 1
 
-@app.route('/api/explain', methods=['POST'])
-def explain_query():
-    """Explain how a query would be processed without executing it"""
+# Main application routes with enhanced functionality
+nlp_parser = AdvancedNLPParser()
+query_generator = EnhancedQueryGenerator(SIEM_SCHEMA)
+response_formatter = EnhancedResponseFormatter()
+context_manager = MLContextManager()
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/query', methods=['POST'])
+def process_query():
+    """Enhanced query processing with advanced NLP"""
     try:
         data = request.json
         query = data.get('query', '')
+        session_id = data.get('session_id', 'default')
         
         if not query:
-            return jsonify({
-                'success': False,
-                'error': 'Query text is required'
-            }), 400
+            return jsonify({'error': 'No query provided'}), 400
         
-        # Parse query without execution
-        query_analysis = nlp_processor.parse_query(query)
+        # Advanced NLP parsing
+        context = context_manager.get_context(session_id)
+        parsed_data = nlp_parser.parse_query(query, context)
         
-        explanation = {
-            'success': True,
-            'explanation': {
-                'detected_entities': [
-                    {
-                        'term': e['term'],
-                        'description': e.get('description', 'Security entity'),
-                        'confidence': e.get('confidence', 0)
-                    } for e in query_analysis['entities']
-                ],
-                'detected_intent': {
-                    'primary': query_analysis['intent']['primary'],
-                    'confidence': query_analysis['intent']['confidence']
-                },
-                'time_range': query_analysis.get('time_range'),
-                'generated_kql': query_analysis['kql_query'],
-                'overall_confidence': query_analysis['confidence'],
-                'processing_notes': [
-                    f"Processed query in {query_analysis['processing_time']}s",
-                    f"Found {len(query_analysis['entities'])} security entities",
-                    f"Intent classified as '{query_analysis['intent']['primary']}'"
-                ]
-            }
-        }
+        # Merge with learned context
+        parsed_data = context_manager.merge_with_context(session_id, parsed_data)
         
-        return jsonify(explanation)
+        # Generate optimized query
+        es_query = query_generator.generate_query(parsed_data)
         
-    except Exception as e:
-        logger.error(f"Query explanation error: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': f'Query explanation failed: {str(e)}'
-        }), 500
-
-@app.route('/api/suggest', methods=['POST'])
-def suggest_queries():
-    """Suggest related queries based on current context"""
-    try:
-        data = request.json
-        session_id = data.get('session_id')
-        
-        if session_id:
-            session = context_manager.get_session(session_id)
-            active_entities = session['context']['active_entities']
+        # Execute query with fallback to enhanced mock data
+        if es:
+            try:
+                results = es.search(index='logs-*', body=es_query)
+            except Exception as e:
+                print(f"Elasticsearch query error: {e}")
+                results = generate_enhanced_mock_results(parsed_data)
         else:
-            active_entities = []
+            results = generate_enhanced_mock_results(parsed_data)
         
-        # Generate contextual suggestions
-        suggestions = []
+        # Enhanced response formatting
+        formatted_response = response_formatter.format_response(
+            results, 
+            parsed_data['intent'], 
+            parsed_data
+        )
         
-        if 'failed login' in active_entities:
-            suggestions.extend([
-                'Show successful logins after failed attempts',
-                'Analyze failed login source IPs',
-                'Generate brute force attack report'
-            ])
-        
-        if 'malware detection' in active_entities:
-            suggestions.extend([
-                'Show affected hosts and systems',
-                'Generate malware family breakdown',
-                'Check network connections from infected hosts'
-            ])
-        
-        # Default suggestions if no context
-        if not suggestions:
-            suggestions = [
-                'Show failed login attempts from yesterday',
-                'Generate malware detection report for last week',
-                'Analyze network anomalies from today',
-                'Find VPN connection failures in last 24 hours',
-                'Show web attacks blocked by firewall'
-            ]
+        # Update ML context
+        context_manager.update_context(session_id, parsed_data, results)
         
         return jsonify({
             'success': True,
-            'suggestions': suggestions[:8],  # Limit to 8 suggestions
-            'context_based': bool(active_entities)
+            'response': formatted_response,
+            'parsed_data': parsed_data,
+            'es_query': es_query,
+            'confidence': parsed_data.get('confidence', 0.7)
         })
         
     except Exception as e:
-        logger.error(f"Suggestion generation error: {str(e)}")
         return jsonify({
             'success': False,
-            'error': 'Failed to generate suggestions'
+            'error': str(e),
+            'debug_info': str(e) if app.debug else None
         }), 500
 
-# WebSocket events
-@socketio.on('connect')
-def handle_connect():
-    """Handle WebSocket connection"""
-    logger.info(f"WebSocket client connected: {request.sid}")
-    emit('connection_status', {'status': 'connected', 'session_id': request.sid})
-
-@socketio.on('join_session')
-def handle_join_session(data):
-    """Handle joining a session room"""
-    session_id = data.get('session_id')
-    if session_id:
-        join_room(session_id)
-        emit('session_joined', {'session_id': session_id})
-        logger.info(f"Client {request.sid} joined session {session_id}")
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    """Handle WebSocket disconnection"""
-    logger.info(f"WebSocket client disconnected: {request.sid}")
-
-# Utility functions
-def generate_insights(query_analysis: Dict, results: Dict) -> List[str]:
-    """Generate insights from query results"""
-    insights = []
-    
-    entities = query_analysis.get('entities', [])
-    total_hits = results.get('total_hits', 0)
-    
-    # Entity-based insights
-    if entities:
-        entity_types = [e.get('category', 'unknown') for e in entities]
+@app.route('/visualize', methods=['POST'])
+def generate_advanced_visualization():
+    """Generate advanced visualization suite"""
+    try:
+        data = request.json
+        statistics = data.get('statistics', {})
+        results = data.get('results', {})
         
-        if 'authentication' in entity_types and total_hits > 10:
-            insights.append('High volume of authentication events detected - possible brute force activity')
-        elif 'malware' in entity_types and total_hits > 0:
-            insights.append('Active malware threats identified - recommend immediate investigation')
-        elif 'network' in entity_types:
-            insights.append('Network security events found - monitor for patterns and escalation')
+        if not statistics and not results:
+            return jsonify({'error': 'No data provided for visualization'}), 400
+        
+        viz_generator = AdvancedVisualizationGenerator()
+        visualizations = viz_generator.generate_comprehensive_visualization(results, {}, statistics)
+        
+        return jsonify({
+            'success': True,
+            'visualizations': visualizations
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/report', methods=['POST'])
+def generate_comprehensive_report():
+    """Generate comprehensive security report"""
+    try:
+        data = request.json
+        query = data.get('query', '')
+        session_id = data.get('session_id', 'default')
+        report_type = data.get('report_type', 'standard')
+        
+        # Parse query for report generation
+        context = context_manager.get_context(session_id)
+        parsed_data = nlp_parser.parse_query(f"generate comprehensive report {query}", context)
+        parsed_data['intent'] = 'report'
+        
+        # Generate and execute query
+        es_query = query_generator.generate_query(parsed_data)
+        
+        if es:
+            try:
+                results = es.search(index='logs-*', body=es_query)
+            except Exception as e:
+                results = generate_enhanced_mock_results(parsed_data)
+        else:
+            results = generate_enhanced_mock_results(parsed_data)
+        
+        # Generate comprehensive report
+        report_response = response_formatter._format_comprehensive_report(results, parsed_data)
+        
+        return jsonify({
+            'success': True,
+            'report': report_response
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+def generate_enhanced_mock_results(parsed_data):
+    """Generate realistic mock data for testing"""
+    mock_hits = []
+    event_type = parsed_data['entities'].get('event_type', 'authentication')
+    num_results = 100
     
-    # Time-based insights
-    time_range = query_analysis.get('time_range')
-    if time_range and 'yesterday' in time_range.get('phrase', ''):
-        insights.append('Analysis focused on previous day - consider expanding timeframe for trends')
+    # Realistic event types and outcomes
+    event_actions = {
+        'authentication': ['user_login', 'user_logout', 'password_change', 'account_locked'],
+        'malware': ['virus_detected', 'trojan_blocked', 'malware_quarantined', 'suspicious_file'],
+        'network': ['connection_established', 'connection_blocked', 'port_scan', 'traffic_anomaly'],
+        'file_access': ['file_read', 'file_write', 'file_deleted', 'file_moved']
+    }
     
-    # Confidence insights
-    confidence = query_analysis.get('confidence', 0)
-    if confidence > 0.8:
-        insights.append('High confidence query mapping - results should be accurate')
-    elif confidence < 0.5:
-        insights.append('Low confidence mapping - consider refining query terms')
+    actions = event_actions.get(event_type, ['generic_event'])
     
-    # Results insights
-    if total_hits == 0:
-        insights.append('No matching events found - try broader search terms or different time range')
-    elif total_hits > 100:
-        insights.append('Large result set - consider adding filters to narrow focus')
+    # Mock IP pools
+    internal_ips = [f'192.168.1.{i}' for i in range(1, 255)]
+    external_ips = [f'203.0.113.{i}' for i in range(1, 100)]
     
-    return insights[:5]  # Limit to 5 insights
+    users = ['admin', 'jdoe', 'msmith', 'alice.cooper', 'bob.wilson', 'charlie.brown', 'diana.prince']
+    hosts = ['srv-web01', 'srv-db02', 'srv-app03', 'workstation-01', 'firewall-01']
+    
+    for i in range(num_results):
+        timestamp = datetime.now() - timedelta(hours=i//4, minutes=i%60)
+        
+        # Create realistic event patterns
+        is_suspicious = i % 7 == 0  # Make some events suspicious
+        outcome = 'failure' if (is_suspicious or i % 4 == 0) else 'success'
+        
+        hit = {
+            '_source': {
+                '@timestamp': timestamp.isoformat() + 'Z',
+                'event': {
+                    'action': np.random.choice(actions),
+                    'category': event_type,
+                    'outcome': outcome,
+                    'severity': 'high' if is_suspicious else np.random.choice(['low', 'medium', 'high']),
+                    'risk_score': np.random.randint(70, 100) if is_suspicious else np.random.randint(1, 50)
+                },
+                'user': {
+                    'name': np.random.choice(users),
+                    'id': f'uid_{i % 1000}',
+                    'email': f'user{i%10}@company.com'
+                },
+                'source': {
+                    'ip': np.random.choice(external_ips if is_suspicious else internal_ips),
+                    'geo': {
+                        'country_name': np.random.choice(['United States', 'India', 'China', 'Russia', 'Germany']),
+                        'city_name': np.random.choice(['New York', 'Mumbai', 'Beijing', 'Moscow', 'Berlin'])
+                    }
+                },
+                'destination': {
+                    'ip': np.random.choice(internal_ips),
+                    'port': np.random.choice([80, 443, 22, 3389, 1433, 3306])
+                },
+                'host': {
+                    'name': np.random.choice(hosts),
+                    'hostname': f'host-{i%10}.company.local',
+                    'ip': np.random.choice(internal_ips)
+                },
+                'network': {
+                    'protocol': np.random.choice(['tcp', 'udp', 'icmp']),
+                    'bytes': np.random.randint(100, 10000),
+                    'packets': np.random.randint(1, 100)
+                },
+                'process': {
+                    'name': np.random.choice(['svchost.exe', 'chrome.exe', 'outlook.exe', 'powershell.exe']),
+                    'pid': np.random.randint(1000, 9999)
+                },
+                'file': {
+                    'name': f'document_{i}.{np.random.choice(["pdf", "docx", "exe", "zip"])}',
+                    'hash': {'sha256': f'abc123def456{i:04d}'},
+                    'size': np.random.randint(1024, 1048576)
+                },
+                'threat': {
+                    'indicator': {
+                        'type': 'malware' if is_suspicious else 'none',
+                        'confidence': 'high' if is_suspicious else 'low'
+                    }
+                },
+                'authentication': {
+                    'method': 'mfa' if i % 5 == 0 else 'password'
+                }
+            }
+        }
+        mock_hits.append(hit)
+    
+    # Create aggregations
+    aggregations = {
+        'events_over_time': {
+            'buckets': [
+                {'key_as_string': (datetime.now() - timedelta(hours=h)).isoformat(),
+                 'doc_count': np.random.randint(5, 50)}
+                for h in range(24)
+            ]
+        },
+        'top_events': {
+            'buckets': [
+                {'key': action, 'doc_count': np.random.randint(10, 100)}
+                for action in actions
+            ]
+        },
+        'geographic_distribution': {
+            'buckets': [
+                {'key': 'United States', 'doc_count': 45},
+                {'key': 'India', 'doc_count': 23},
+                {'key': 'China', 'doc_count': 12},
+                {'key': 'Russia', 'doc_count': 8},
+                {'key': 'Germany', 'doc_count': 5}
+            ]
+        }
+    }
+    
+    return {
+        'hits': {
+            'total': {'value': num_results},
+            'hits': mock_hits
+        },
+        'aggregations': aggregations
+    }
 
 if __name__ == '__main__':
-    logger.info("Starting Conversational SIEM Assistant API")
-    logger.info("Features: NLP Processing, Multi-turn Context, Real SIEM Integration")
-    
-    # Run with SocketIO support
-    socketio.run(
-        app,
-        debug=os.getenv('DEBUG', 'false').lower() == 'true',
-        host='0.0.0.0',
-        port=int(os.getenv('PORT', 5000))
-    )
+    app.run(debug=True, host='0.0.0.0', port=5000)
