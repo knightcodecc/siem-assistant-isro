@@ -1515,3 +1515,166 @@
     </script>
 </body>
 </html>
+// Replace the sendMessage() function in your index.html with this:
+
+async function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const sendButton = document.getElementById('sendButton');
+    const query = input.value.trim();
+
+    if (!query) return;
+
+    addUserMessage(query);
+    
+    input.value = '';
+    input.style.height = 'auto';
+    sendButton.disabled = true;
+    sendButton.innerHTML = '<div class="loading-spinner"></div>';
+
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    try {
+        // Generate mock response based on query
+        const mockResponse = generateMockResponse(query);
+        addAssistantMessage(mockResponse);
+        updateConfidenceBar(mockResponse.confidence || 0.7);
+    } catch (error) {
+        console.error('Error:', error);
+        addErrorMessage('An error occurred processing your request');
+    } finally {
+        sendButton.disabled = false;
+        sendButton.innerHTML = 'Send Query';
+        focusInput();
+    }
+}
+
+function generateMockResponse(query) {
+    const queryLower = query.toLowerCase();
+    
+    // Generate realistic mock data based on query keywords
+    const mockResults = generateMockResults(queryLower);
+    const mockStatistics = generateMockStatistics(mockResults);
+    
+    let responseText = '';
+    
+    if (queryLower.includes('critical') || queryLower.includes('24 hours')) {
+        responseText = `Security Analysis Results:\n\nFound 87 security events matching your criteria. Of these, 23 events (26.4%) resulted in failures, indicating potential security concerns. The events involved 12 unique users and originated from 34 distinct IP addresses.\n\nMODERATE CONCERN: The failure rate is elevated and warrants investigation.\n\nAnalysis Period: Last 24 hours`;
+    } else if (queryLower.includes('failed') || queryLower.includes('authentication')) {
+        responseText = `Authentication Analysis:\n\nDetected 45 failed authentication attempts across the network. Top sources:\n- 192.168.1.105 (15 attempts)\n- 203.0.113.42 (12 attempts)\n- 10.0.0.87 (8 attempts)\n\nGeographic distribution shows attempts from: United States (60%), India (20%), China (15%), Unknown (5%)\n\nRECOMMENDATION: Enable MFA and review access policies for affected accounts.`;
+    } else if (queryLower.includes('malware')) {
+        responseText = `Malware Detection Report:\n\nIdentified 8 malware-related events in the specified timeframe:\n- 3 Trojan detections on workstations\n- 2 Suspicious file executions\n- 2 C2 communication attempts blocked\n- 1 Ransomware attempt quarantined\n\nAll threats were successfully contained. Affected systems have been isolated for further investigation.`;
+    } else {
+        responseText = `Security analysis complete. Found ${mockResults.length} events matching your query criteria. The events show normal security posture with no critical threats detected.\n\nAnalysis Period: ${getTimeRangeFromQuery(queryLower)}`;
+    }
+    
+    return {
+        success: true,
+        response: {
+            text: responseText,
+            count: mockResults.length,
+            results: mockResults,
+            statistics: mockStatistics
+        },
+        confidence: 0.85,
+        parsed_data: {
+            original_query: query,
+            intent: 'search'
+        }
+    };
+}
+
+function generateMockResults(query) {
+    const results = [];
+    const numResults = Math.floor(Math.random() * 50) + 20;
+    
+    const users = ['admin', 'jdoe', 'msmith', 'alice.cooper', 'bob.wilson'];
+    const ips = ['192.168.1.100', '192.168.1.105', '203.0.113.42', '10.0.0.87'];
+    const events = ['user_login', 'user_logout', 'file_access', 'malware_detected'];
+    const hosts = ['srv-web01', 'workstation-05', 'srv-db02'];
+    
+    for (let i = 0; i < Math.min(numResults, 20); i++) {
+        const isSuspicious = i % 5 === 0;
+        results.push({
+            timestamp: new Date(Date.now() - i * 3600000).toISOString(),
+            event: events[Math.floor(Math.random() * events.length)],
+            category: query.includes('malware') ? 'malware' : 'authentication',
+            user: users[Math.floor(Math.random() * users.length)],
+            source_ip: ips[Math.floor(Math.random() * ips.length)],
+            outcome: isSuspicious ? 'failure' : 'success',
+            severity: isSuspicious ? 'high' : 'low',
+            host: hosts[Math.floor(Math.random() * hosts.length)]
+        });
+    }
+    
+    return results;
+}
+
+function generateMockStatistics(results) {
+    const stats = {
+        event_types: {},
+        users: {},
+        source_ips: {},
+        outcomes: { success: 0, failure: 0 },
+        severity: {}
+    };
+    
+    results.forEach(result => {
+        stats.event_types[result.event] = (stats.event_types[result.event] || 0) + 1;
+        stats.users[result.user] = (stats.users[result.user] || 0) + 1;
+        stats.source_ips[result.source_ip] = (stats.source_ips[result.source_ip] || 0) + 1;
+        stats.outcomes[result.outcome] = (stats.outcomes[result.outcome] || 0) + 1;
+        stats.severity[result.severity] = (stats.severity[result.severity] || 0) + 1;
+    });
+    
+    return stats;
+}
+
+function getTimeRangeFromQuery(query) {
+    if (query.includes('24 hours') || query.includes('today')) return 'Last 24 hours';
+    if (query.includes('week')) return 'Last 7 days';
+    if (query.includes('month')) return 'Last 30 days';
+    return 'Last 24 hours';
+}
+
+// Also update these functions to work without backend:
+async function generateVisualization(statisticsJson) {
+    console.log('Visualization feature requires backend server');
+    const vizContent = document.getElementById('vizContent');
+    vizContent.innerHTML = '<p style="padding: 20px; text-align: center;">Visualization generation requires backend server. Currently displaying mock data.</p>';
+}
+
+async function generateReport(query) {
+    console.log('Report generation feature requires backend server');
+    
+    const mockReport = {
+        executive_summary: 'This is a comprehensive security analysis report. In a production environment with backend server, this would contain detailed analytics, visualizations, and actionable recommendations based on your security data.',
+        metadata: {
+            generated_at: new Date().toISOString(),
+            total_events: Math.floor(Math.random() * 1000) + 500,
+            confidence_score: 0.85
+        }
+    };
+    
+    addReportMessage(mockReport);
+}
+
+function exportResults(dataJson) {
+    alert('Export functionality requires backend server. In production, this would export data to CSV/PDF formats.');
+}
+
+function saveToBookmarks(query) {
+    localStorage.setItem('bookmarked_query_' + Date.now(), query);
+    alert('Query bookmarked locally!');
+}
+
+function shareResults(query) {
+    if (navigator.share) {
+        navigator.share({
+            title: 'SIEM Query Results',
+            text: query
+        });
+    } else {
+        alert('Share: ' + query);
+    }
+}
