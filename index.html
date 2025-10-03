@@ -907,6 +907,34 @@
     <script>
         // Application state
         // Application state
+// At the top of your <script> section, add:
+const API_URL = 'https://siem-assistant-isro.vercel.app';
+
+// Then update your fetch calls to use this URL
+async function sendQuery(message) {
+    try {
+        const response = await fetch(`${API_URL}/api/chat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+                message: message,
+                conversation_id: sessionStorage.getItem('conversation_id')
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('API Error:', error);
+        throw error;
+    }
+}        
 let sessionId = 'session_' + Date.now();
 let conversationHistory = [];
 let activeFilters = {};
